@@ -263,3 +263,10 @@ input[type='file'] { min-height: 0; padding: 6px; }
 .login-apps { width: 100%; max-width: 440px; }
 .login-apps:empty { display: none; }
 @media (min-width: 900px) { .login-apps { grid-column: 1 / -1; max-width: 860px; } }
+/* Top bar must never widen the page on narrow phones or with wide fallback fonts. */
+.topbar { min-width: 0; }
+.shell > * { min-width: 0; }
+.brand { flex-shrink: 0; }
+.userchip { flex: 1 1 auto; justify-content: flex-end; min-width: 0; }
+.userchip-role, .userchip-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.userchip .btn { flex-shrink: 0; }
