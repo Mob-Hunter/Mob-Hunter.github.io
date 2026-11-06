@@ -270,7 +270,13 @@ describe('Worker HTTP API', () => {
     expect(await verify(await mint(good))).toBe('root@corp.test');
     expect(await verify(await mint({ ...good, aud: ['other'] }))).toBeNull();
     expect(await verify(await mint({ ...good, exp: now - 10 }))).toBeNull();
-    expect(await verify((await mint(good)).replace(/.$/, 'A'))).toBeNull();
+    // Tamper with a character in the middle of the signature, always changing it (the last base64url
+    // character can carry padding bits, so editing it is not guaranteed to change the bytes).
+    const tok = await mint(good);
+    const sigStart = tok.lastIndexOf('.') + 1;
+    const mid = sigStart + 20;
+    const tampered = tok.slice(0, mid) + (tok[mid] === 'A' ? 'B' : 'A') + tok.slice(mid + 1);
+    expect(await verify(tampered)).toBeNull();
 
     const ctx = await setup({ access: verify });
     await ctx.call('POST', '/bootstrap', { token: BOOT, name: 'Root', email: 'root@corp.test', password: PW });
