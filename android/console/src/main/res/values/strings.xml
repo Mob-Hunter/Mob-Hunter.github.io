@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">FleetGuard Console</string>
+    <string name="change_server">Change server</string>
+</resources>

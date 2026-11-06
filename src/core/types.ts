@@ -41,6 +41,25 @@ export interface Employee {
   name: string;
   email: string;
   department: string;
+  /** 'leaver' once offboarded; kept for audit/DSAR, never assignable */
+  status?: 'active' | 'leaver';
+}
+
+export interface AppCatalogEntry {
+  packageName: string;
+  name: string;
+  /** HTTPS URL of the signed APK */
+  url: string;
+  /** SHA-256 of the APK file (hex) — the agent refuses a mismatching download */
+  sha256: string;
+}
+
+export interface OrgSettings {
+  orgName: string;
+  dpoContact: string;
+  apps: AppCatalogEntry[];
+  /** optional HTTPS endpoint that receives every audit row (HMAC-signed) */
+  siemWebhookUrl?: string;
 }
 
 export interface DevicePolicy {
@@ -68,11 +87,13 @@ export interface Telemetry {
   batteryTempC: number;
   storageFreeGb: number;
   storageTotalGb: number;
-  integrity: 'MEETS_STRONG_INTEGRITY' | 'MEETS_DEVICE_INTEGRITY' | 'MEETS_BASIC_INTEGRITY' | 'FAILED';
+  integrity: 'MEETS_STRONG_INTEGRITY' | 'MEETS_DEVICE_INTEGRITY' | 'MEETS_BASIC_INTEGRITY' | 'NOT_EVALUATED' | 'FAILED';
   patchLevel: string;
 }
 
 export interface DeviceCertificate {
+  /** absent = Ed25519 (simulator); 'ES256' = ECDSA P-256 from the Android Keystore */
+  alg?: 'ES256';
   serial: string;
   deviceId: string;
   publicKey: string;
@@ -129,6 +150,8 @@ export interface CommandPayload {
 
 export interface SignedCommand {
   payload: CommandPayload;
+  /** exact string that was signed (canonicalJson(payload)); lets non-JS agents verify without re-serialising */
+  signed?: string;
   /** Ed25519 signature over canonicalJson(payload) */
   sig: string;
   kid: string;
@@ -215,6 +238,7 @@ export interface BackendState {
   deviceNonces: Record<string, { nonce: string; at: number }[]>;
   audit: AuditRow[];
   lastPurgeAt: number | null;
+  settings?: OrgSettings;
 }
 
 export interface DeviceAuth {
@@ -225,6 +249,11 @@ export interface DeviceAuth {
   nonce: string;
   bodyHash: string;
   sig: string;
+  /**
+   * Set ONLY by the HTTP layer: SHA-256 of the exact request bytes. When present
+   * it replaces the canonical-JSON body hash, so non-JS agents need no canonicaliser.
+   */
+  serverBodyHash?: string;
 }
 
 export interface ProvisioningPayload {

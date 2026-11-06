@@ -23,6 +23,8 @@ import {
   timingSafeEqual,
   toHex,
   verifyEd25519,
+  verifyEs256,
+  isP256Spki,
 } from './crypto';
 import { buildProvisioningPayload, COLLECTION_NOTICE, defaultPolicy, ENROLLMENT_TTL_MS } from './enrollment';
 import {
@@ -47,6 +49,8 @@ import type {
   DevicePolicy,
   Employee,
   EnrollmentToken,
+  AppCatalogEntry,
+  OrgSettings,
   LocationFix,
   ProvisioningPayload,
   PublicUser,
@@ -62,6 +66,9 @@ export const SESSION_ABSOLUTE_MS = 12 * 60 * 60 * 1000;
 export const LOCATION_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 export const DEVICE_REQUEST_WINDOW_MS = 5 * 60 * 1000;
 export const CERT_LIFETIME_MS = 365 * 24 * 60 * 60 * 1000;
+/** completed command history kept for 180 days (audit rows are kept independently) */
+export const COMMAND_RETENTION_MS = 180 * 24 * 60 * 60 * 1000;
+export const STALE_CHECKIN_MS = 24 * 60 * 60 * 1000;
 const MAX_FAILED_LOGINS = 5;
 const LOCKOUT_MS = 15 * 60 * 1000;
 
@@ -106,6 +113,11 @@ export interface BackendOptions {
   /** PBKDF2 iterations (lower only in tests) */
   pbkdf2Iterations?: number;
   push?: PushProvider;
+  /** SHA-256 (URL-safe base64) of the agent APK signing certificate, for the provisioning QR */
+  apkSignatureChecksum?: string;
+  apkVersion?: string;
+  /** called for every audit row (e.g. forward to a SIEM) */
+  onAudit?: (row: AuditRow) => void;
 }
 
 /** Simple fixed-window rate limiter (stands in for Cloudflare WAF rate-limit rules). */
@@ -180,8 +192,11 @@ export class Backend {
   }
 
   private attach(state: BackendState) {
+    // Forward-compatible migration of older persisted state.
+    state.settings ??= defaultSettings();
+    state.settings.apps ??= [];
     this.state = state;
-    this.audit = new AuditLog(state.audit);
+    this.audit = new AuditLog(state.audit, this.opts.onAudit);
     this.commandsById = new Map(state.commands.map((c) => [c.id, c]));
   }
 
@@ -338,6 +353,37 @@ export class Backend {
     await this.audit.append({ at: now, actor: user.id, actorRole: user.role, action: 'auth.login' });
     this.persist();
     return { sessionId: session.id, user: publicUser(user) };
+  }
+
+  /**
+   * SSO sign-in (Cloudflare Access / OIDC). The identity provider has already
+   * enforced authentication + MFA; we only map the verified e-mail to a console user.
+   */
+  async ssoLogin(emailRaw: string, provider: string): Promise<{ sessionId: string; user: PublicUser }> {
+    const now = this.clock();
+    const email = String(emailRaw).trim().toLowerCase();
+    const user = this.state.users.find((u) => u.email === email);
+    if (!user || user.disabled) {
+      this.audit.append({ at: now, actor: email, actorRole: 'ANON', action: 'auth.sso_denied', detail: { provider } });
+      this.persist();
+      throw new ApiError(403, 'not_provisioned', 'Your account is not provisioned in this console');
+    }
+    const session: Session = { id: randomId('ses', 24), userId: user.id, createdAt: now, lastSeenAt: now, expiresAt: now + SESSION_ABSOLUTE_MS };
+    this.state.sessions = this.state.sessions.filter((s) => s.expiresAt > now && now - s.lastSeenAt < SESSION_IDLE_MS);
+    this.state.sessions.push(session);
+    this.audit.append({ at: now, actor: user.id, actorRole: user.role, action: 'auth.login', detail: { method: 'sso', provider } });
+    this.persist();
+    return { sessionId: session.id, user: publicUser(user) };
+  }
+
+  siemWebhookUrl(): string | undefined {
+    return this.state.settings?.siemWebhookUrl;
+  }
+
+  /** Push tokens that look real (the placeholder minted at enrolment is skipped by push providers). */
+  pushTargetsFor(deviceId: string): { platform: Device['platform']; token: string } | null {
+    const d = this.state.devices.find((x) => x.id === deviceId);
+    return d ? { platform: d.platform, token: d.pushToken } : null;
   }
 
   async logout(sessionId: string): Promise<void> {
@@ -557,6 +603,8 @@ export class Backend {
       token,
       serverPin: await this.serverPin(),
       wifi: wifiSsid ? { ssid: wifiSsid, security: 'WPA' } : undefined,
+      apkVersion: this.opts.apkVersion,
+      signatureChecksum: this.opts.apkSignatureChecksum,
     });
   }
 
@@ -585,11 +633,19 @@ export class Backend {
     token: string;
     devicePublicKey: string;
     platform?: 'android';
+    /** 'ES256' for Android Keystore P-256 keys (SPKI hex); default Ed25519 (32-byte hex) */
+    keyAlg?: 'Ed25519' | 'ES256';
     hardware: { serial: string; model: string; os: string };
-  }): Promise<{ deviceId: string; cert: DeviceCertificate; certSig: string; serverPublicKey: string; caPublicKey: string; policy: DevicePolicy; notice: typeof COLLECTION_NOTICE }> {
+  }): Promise<{ deviceId: string; cert: DeviceCertificate; certJson: string; certSig: string; serverPublicKey: string; caPublicKey: string; policy: DevicePolicy; notice: Notice; transparencyUrl: string }> {
     const now = this.clock();
     this.enrollLimiter.check('enroll', now);
-    if (!/^[0-9a-f]{64}$/.test(input.devicePublicKey ?? '')) throw new ApiError(422, 'invalid_key', 'Device public key must be a 32-byte Ed25519 key');
+    const es256 = input.keyAlg === 'ES256';
+    if (es256 ? !/^[0-9a-f]{150,200}$/.test(input.devicePublicKey ?? '') : !/^[0-9a-f]{64}$/.test(input.devicePublicKey ?? '')) {
+      throw new ApiError(422, 'invalid_key', es256 ? 'Device public key must be a P-256 SubjectPublicKeyInfo (hex)' : 'Device public key must be a 32-byte Ed25519 key');
+    }
+    if (es256 && !(await isP256Spki(input.devicePublicKey))) {
+      throw new ApiError(422, 'invalid_key', 'Unreadable device key');
+    }
     const hash = await sha256Hex(String(input.token ?? ''));
     const rec = this.state.enrollments.find((e) => e.tokenHash === hash);
     if (!rec) throw new ApiError(401, 'invalid_token', 'Unknown enrolment token');
@@ -599,6 +655,7 @@ export class Backend {
 
     const deviceId = randomId('dev', 9);
     const cert: DeviceCertificate = {
+      ...(es256 ? { alg: 'ES256' as const } : {}),
       serial: toHex(randomBytes(8)),
       deviceId,
       publicKey: input.devicePublicKey,
@@ -606,7 +663,8 @@ export class Backend {
       notBefore: now,
       notAfter: now + CERT_LIFETIME_MS,
     };
-    const certSig = await signEd25519(canonicalJson(cert), this.state.keys.deviceCa.secretKey);
+    const certJson = canonicalJson(cert);
+    const certSig = await signEd25519(certJson, this.state.keys.deviceCa.secretKey);
     const device: Device = {
       id: deviceId,
       platform: 'android',
@@ -636,11 +694,13 @@ export class Backend {
     return {
       deviceId,
       cert,
+      certJson,
       certSig,
       serverPublicKey: this.state.keys.commandSigning.publicKey,
       caPublicKey: this.state.keys.deviceCa.publicKey,
       policy: structuredClone(device.policy),
-      notice: COLLECTION_NOTICE,
+      notice: this.notice(),
+      transparencyUrl: this.transparencyPath(device),
     };
   }
 
@@ -661,14 +721,16 @@ export class Backend {
     const device = this.state.devices.find((d) => d.id === auth.deviceId);
     if (!device) return fail('Unknown device');
     if (device.state === 'wiped' || device.state === 'retired') fail('Certificate revoked');
+    if (!auth.cert || typeof auth.sig !== 'string' || typeof auth.nonce !== 'string' || auth.nonce.length < 8 || auth.nonce.length > 64) fail('Malformed device credentials');
     if (!(await verifyEd25519(canonicalJson(auth.cert), auth.certSig, this.state.keys.deviceCa.publicKey))) fail('Certificate not issued by this CA');
     if (canonicalJson(auth.cert) !== canonicalJson(device.cert)) fail('Certificate does not match device record');
     if (auth.cert.notAfter < now || auth.cert.notBefore > now + 60_000) fail('Certificate not valid now');
     if (Math.abs(now - auth.ts) > DEVICE_REQUEST_WINDOW_MS) fail('Request timestamp outside allowed window');
-    const bodyHash = await sha256Hex(canonicalJson(body ?? null));
+    const bodyHash = auth.serverBodyHash ?? (await sha256Hex(canonicalJson(body ?? null)));
     if (bodyHash !== auth.bodyHash) fail('Body hash mismatch');
     const msg = deviceRequestMessage(method, path, auth.ts, auth.nonce, auth.bodyHash);
-    if (!(await verifyEd25519(msg, auth.sig, auth.cert.publicKey))) fail('Bad request signature');
+    const sigOk = device.cert.alg === 'ES256' ? await verifyEs256(msg, auth.sig, device.cert.publicKey) : await verifyEd25519(msg, auth.sig, device.cert.publicKey);
+    if (!sigOk) fail('Bad request signature');
     const seen = (this.state.deviceNonces[device.id] ??= []).filter((n) => now - n.at < DEVICE_REQUEST_WINDOW_MS * 2);
     if (seen.some((n) => n.nonce === auth.nonce)) fail('Replayed request');
     seen.push({ nonce: auth.nonce, at: now });
@@ -715,7 +777,8 @@ export class Backend {
       const out = relay.pull(this.clock());
       d.lastCheckinAt = this.clock();
       this.persist();
-      return structuredClone(out);
+      // `signed` is the exact signed string, so agents in other languages verify without re-serialising.
+      return structuredClone(out).map((e) => ({ ...e, signed: canonicalJson(e.payload) }));
     });
   }
 
@@ -840,7 +903,7 @@ export class Backend {
     if ((input.type === 'LOCATE' || input.type === 'LOST_MODE_ON') && !d.policyAckAt) {
       throw new ApiError(409, 'not_acknowledged', 'The user has not acknowledged the device notice yet — location cannot be collected');
     }
-    const params = sanitiseParams(input.type, input.params ?? {});
+    const params = sanitiseParams(input.type, input.params ?? {}, this.state.settings!.apps);
     const now = this.clock();
     const cmd: CommandRecord = {
       id: randomId('cmd', 10),
@@ -961,10 +1024,13 @@ export class Backend {
     const purged = before - this.state.locations.length;
     this.state.enrollments = this.state.enrollments.filter((e) => now - e.createdAt < 30 * 24 * 3600_000);
     this.state.wakes = this.state.wakes.slice(-500);
+    const cmdBefore = this.state.commands.length;
+    this.state.commands = this.state.commands.filter((c) => !c.completedAt || now - c.completedAt < COMMAND_RETENTION_MS);
+    if (cmdBefore !== this.state.commands.length) this.commandsById = new Map(this.state.commands.map((c) => [c.id, c]));
     this.state.lastPurgeAt = now;
     if (purged > 0) this.audit.append({ at: now, actor: 'system', actorRole: 'SYSTEM', action: 'location.purged', detail: { purged, retentionDays: 30 } });
     // Only notify listeners when something actually changed (avoids render loops on read paths).
-    if (purged > 0 || enrBefore !== this.state.enrollments.length) this.persist();
+    if (purged > 0 || enrBefore !== this.state.enrollments.length || cmdBefore !== this.state.commands.length) this.persist();
     return purged;
   }
 
@@ -1016,7 +1082,7 @@ export class Backend {
   /** Employee-facing page: what is collected + every location request for their device (30 days). */
   async transparency(deviceId: string, key: string): Promise<{
     deviceName: string;
-    notice: typeof COLLECTION_NOTICE;
+    notice: Notice;
     acknowledgedAt: number | null;
     lostMode: boolean;
     continuousLocation: boolean;
@@ -1039,13 +1105,339 @@ export class Backend {
     }
     return {
       deviceName: displayName(d),
-      notice: COLLECTION_NOTICE,
+      notice: this.notice(),
       acknowledgedAt: d.policyAckAt,
       lostMode: d.lostMode,
       continuousLocation: d.policy.continuousLocation,
       events,
       locations: locations.sort((a, b) => b.at - a.at),
     };
+  }
+
+  // ------------------------------------------------------------------ bootstrap (first Super Admin on a fresh deployment)
+
+  needsBootstrap(): boolean {
+    return this.state.users.length === 0;
+  }
+
+  /** Creates the first Super Admin. Only works while there are no users at all. */
+  async bootstrap(input: { name: string; email: string; password: string }): Promise<{ email: string; totpSecret: string; otpauthUri: string }> {
+    if (!this.needsBootstrap()) throw new ApiError(409, 'already_bootstrapped', 'This deployment already has administrators');
+    const acc = await this.createUser({ ...input, role: 'SUPER_ADMIN' }, 'bootstrap');
+    return { email: acc.email, totpSecret: acc.totpSecret, otpauthUri: this.otpauthUri(acc.email, acc.totpSecret) };
+  }
+
+  otpauthUri(email: string, secret: string): string {
+    const issuer = encodeURIComponent(this.state.settings?.orgName || 'FleetGuard');
+    return `otpauth://totp/${issuer}:${encodeURIComponent(email)}?secret=${secret}&issuer=${issuer}&algorithm=SHA1&digits=6&period=30`;
+  }
+
+  // ------------------------------------------------------------------ admin: user lifecycle
+
+  async adminCreateUser(sessionId: string, input: { name: string; email: string; role: Role; password: string }): Promise<{ user: PublicUser; totpSecret: string; otpauthUri: string }> {
+    const { user } = this.requireSession(sessionId);
+    this.guard(user, 'users.manage');
+    if (!input.name?.trim() || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(input.email ?? '')) throw new ApiError(422, 'invalid_user', 'Name and a valid e-mail are required');
+    const acc = await this.createUser({ ...input, name: input.name.trim() }, user.id);
+    const created = this.state.users.find((u) => u.email === acc.email)!;
+    return { user: publicUser(created), totpSecret: acc.totpSecret, otpauthUri: this.otpauthUri(acc.email, acc.totpSecret) };
+  }
+
+  async setUserDisabled(sessionId: string, userId: string, disabled: boolean): Promise<PublicUser> {
+    const { user } = this.requireSession(sessionId);
+    this.guard(user, 'users.manage');
+    if (userId === user.id) throw new ApiError(409, 'self_change', 'You cannot disable your own account');
+    const target = this.state.users.find((u) => u.id === userId);
+    if (!target) throw new ApiError(404, 'not_found', 'User not found');
+    if (disabled && target.role === 'SUPER_ADMIN' && this.state.users.filter((u) => u.role === 'SUPER_ADMIN' && !u.disabled).length <= 1) {
+      throw new ApiError(409, 'last_admin', 'Cannot disable the last Super Admin');
+    }
+    target.disabled = disabled;
+    if (disabled) this.state.sessions = this.state.sessions.filter((s) => s.userId !== target.id);
+    this.audit.append({ at: this.clock(), actor: user.id, actorRole: user.role, action: disabled ? 'user.disabled' : 'user.enabled', target: target.id });
+    this.persist();
+    return publicUser(target);
+  }
+
+  /** Issues a new TOTP secret (lost phone). Existing sessions are revoked. */
+  async resetUserMfa(sessionId: string, userId: string): Promise<{ totpSecret: string; otpauthUri: string }> {
+    const { user } = this.requireSession(sessionId);
+    this.guard(user, 'users.manage');
+    if (userId === user.id) throw new ApiError(409, 'self_change', 'Ask another Super Admin to reset your MFA');
+    const target = this.state.users.find((u) => u.id === userId);
+    if (!target) throw new ApiError(404, 'not_found', 'User not found');
+    target.totpSecret = base32Encode(randomBytes(20));
+    this.state.sessions = this.state.sessions.filter((s) => s.userId !== target.id);
+    this.audit.append({ at: this.clock(), actor: user.id, actorRole: user.role, action: 'user.mfa_reset', target: target.id });
+    this.persist();
+    return { totpSecret: target.totpSecret, otpauthUri: this.otpauthUri(target.email, target.totpSecret) };
+  }
+
+  async changePassword(sessionId: string, current: string, next: string): Promise<void> {
+    const { user, session } = this.requireSession(sessionId);
+    if (!timingSafeEqual(await hashPassword(String(current), user.salt, this.iterations), user.passwordHash)) throw new ApiError(401, 'invalid_credentials', 'Current password is wrong');
+    if (String(next).length < 12) throw new ApiError(422, 'weak_password', 'Password must be at least 12 characters');
+    user.salt = toHex(randomBytes(16));
+    user.passwordHash = await hashPassword(String(next), user.salt, this.iterations);
+    // keep only the current session
+    this.state.sessions = this.state.sessions.filter((s) => s.userId !== user.id || s.id === session.id);
+    this.audit.append({ at: this.clock(), actor: user.id, actorRole: user.role, action: 'user.password_changed', target: user.id });
+    this.persist();
+  }
+
+  listSessions(sessionId: string): { id: string; userId: string; userName: string; createdAt: number; lastSeenAt: number; current: boolean }[] {
+    const { user, session } = this.requireSession(sessionId);
+    this.guard(user, 'sessions.manage');
+    const now = this.clock();
+    return this.state.sessions
+      .filter((s) => s.expiresAt > now && now - s.lastSeenAt < SESSION_IDLE_MS)
+      .map((s) => ({
+        // never expose the bearer value itself
+        id: s.id.slice(0, 12),
+        userId: s.userId,
+        userName: this.state.users.find((u) => u.id === s.userId)?.name ?? s.userId,
+        createdAt: s.createdAt,
+        lastSeenAt: s.lastSeenAt,
+        current: s.id === session.id,
+      }));
+  }
+
+  async revokeSession(sessionId: string, sessionPrefix: string): Promise<void> {
+    const { user } = this.requireSession(sessionId);
+    this.guard(user, 'sessions.manage');
+    if (!sessionPrefix || sessionPrefix.length < 12) throw new ApiError(422, 'invalid_session', 'Unknown session');
+    const target = this.state.sessions.find((s) => s.id.startsWith(sessionPrefix));
+    if (!target) throw new ApiError(404, 'not_found', 'Session not found');
+    this.state.sessions = this.state.sessions.filter((s) => s !== target);
+    this.audit.append({ at: this.clock(), actor: user.id, actorRole: user.role, action: 'session.revoked', target: target.userId });
+    this.persist();
+  }
+
+  // ------------------------------------------------------------------ admin: employees
+
+  async createEmployee(sessionId: string, e: Omit<Employee, 'id' | 'status'>): Promise<Employee> {
+    const { user } = this.requireSession(sessionId);
+    this.guard(user, 'employee.manage');
+    const emp = this.validateEmployee(e);
+    if (this.state.employees.some((x) => x.email.toLowerCase() === emp.email.toLowerCase())) throw new ApiError(409, 'exists', 'An employee with this e-mail exists');
+    const rec: Employee = { id: randomId('emp', 6), ...emp, status: 'active' };
+    this.state.employees.push(rec);
+    this.audit.append({ at: this.clock(), actor: user.id, actorRole: user.role, action: 'employee.created', target: rec.id });
+    this.persist();
+    return { ...rec };
+  }
+
+  async updateEmployee(sessionId: string, id: string, patch: Partial<Omit<Employee, 'id' | 'status'>>): Promise<Employee> {
+    const { user } = this.requireSession(sessionId);
+    this.guard(user, 'employee.manage');
+    const rec = this.state.employees.find((x) => x.id === id);
+    if (!rec) throw new ApiError(404, 'not_found', 'Employee not found');
+    const next = this.validateEmployee({ name: patch.name ?? rec.name, email: patch.email ?? rec.email, department: patch.department ?? rec.department });
+    Object.assign(rec, next);
+    this.audit.append({ at: this.clock(), actor: user.id, actorRole: user.role, action: 'employee.updated', target: rec.id });
+    this.persist();
+    return { ...rec };
+  }
+
+  /** Bulk import (CSV parsed by the client). Existing e-mails are updated, new ones created. */
+  async importEmployees(sessionId: string, rows: Omit<Employee, 'id' | 'status'>[]): Promise<{ created: number; updated: number; errors: { row: number; error: string }[] }> {
+    const { user } = this.requireSession(sessionId);
+    this.guard(user, 'employee.manage');
+    if (!Array.isArray(rows) || rows.length > 5000) throw new ApiError(422, 'too_many', 'Import up to 5000 rows at a time');
+    let created = 0;
+    let updated = 0;
+    const errors: { row: number; error: string }[] = [];
+    rows.forEach((r, i) => {
+      try {
+        const emp = this.validateEmployee(r);
+        const existing = this.state.employees.find((x) => x.email.toLowerCase() === emp.email.toLowerCase());
+        if (existing) {
+          Object.assign(existing, emp);
+          updated++;
+        } else {
+          this.state.employees.push({ id: randomId('emp', 6), ...emp, status: 'active' });
+          created++;
+        }
+      } catch (e) {
+        errors.push({ row: i + 1, error: e instanceof Error ? e.message : String(e) });
+      }
+    });
+    this.audit.append({ at: this.clock(), actor: user.id, actorRole: user.role, action: 'employee.imported', detail: { created, updated, errors: errors.length } });
+    this.persist();
+    return { created, updated, errors };
+  }
+
+  /** Leaver workflow: unassigns their devices and marks the record; devices then need re-issue or retirement. */
+  async offboardEmployee(sessionId: string, id: string): Promise<{ unassigned: string[] }> {
+    const { user } = this.requireSession(sessionId);
+    this.guard(user, 'employee.manage');
+    const rec = this.state.employees.find((x) => x.id === id);
+    if (!rec) throw new ApiError(404, 'not_found', 'Employee not found');
+    rec.status = 'leaver';
+    const unassigned: string[] = [];
+    for (const d of this.state.devices) {
+      if (d.assignedUserId === id) {
+        d.assignedUserId = null;
+        unassigned.push(d.id);
+      }
+    }
+    this.audit.append({ at: this.clock(), actor: user.id, actorRole: user.role, action: 'employee.offboarded', target: id, detail: { unassigned } });
+    this.persist();
+    return { unassigned };
+  }
+
+  private validateEmployee(e: Partial<Employee>): Omit<Employee, 'id' | 'status'> {
+    const name = String(e.name ?? '').trim();
+    const email = String(e.email ?? '').trim().toLowerCase();
+    const department = String(e.department ?? '').trim();
+    if (!name || name.length > 120 || /[<>]/.test(name)) throw new ApiError(422, 'invalid_name', 'Invalid name');
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) || email.length > 200) throw new ApiError(422, 'invalid_email', `Invalid e-mail: ${email || '(empty)'}`);
+    if (department.length > 120 || /[<>]/.test(department)) throw new ApiError(422, 'invalid_department', 'Invalid department');
+    return { name, email, department };
+  }
+
+  // ------------------------------------------------------------------ admin: device lifecycle
+
+  /** Decommission: revokes the certificate (device can no longer call the API) and clears the queue. */
+  async retireDevice(sessionId: string, deviceId: string, reason: string): Promise<DeviceView> {
+    const { user } = this.requireSession(sessionId);
+    this.guard(user, 'device.retire');
+    if (!reason || reason.trim().length < 5) throw new ApiError(422, 'reason_required', 'Give a reason for retiring the device');
+    const d = this.findDevice(deviceId);
+    if (d.state === 'retired') throw new ApiError(409, 'already_retired', 'Device already retired');
+    d.state = 'retired';
+    d.lostMode = false;
+    d.assignedUserId = null;
+    this.state.relayQueues[d.id] = [];
+    for (const c of this.state.commands) if (c.deviceId === d.id && ['queued', 'delivered', 'pending_approval'].includes(c.status)) c.status = 'expired';
+    this.audit.append({ at: this.clock(), actor: user.id, actorRole: user.role, action: 'device.retired', target: d.id, detail: { reason: reason.trim().slice(0, 300), certSerial: d.cert.serial } });
+    this.persist();
+    return this.deviceView(d);
+  }
+
+  /** Registers / refreshes the push (FCM) token the agent reports. */
+  async registerPushToken(auth: DeviceAuth, body: { token: string }): Promise<{ ok: true }> {
+    const d = await this.authenticateDevice('POST', '/v1/push-token', body, auth);
+    const t = String(body?.token ?? '');
+    if (t.length < 10 || t.length > 4096) throw new ApiError(422, 'invalid_token', 'Invalid push token');
+    d.pushToken = t;
+    this.persist();
+    return { ok: true };
+  }
+
+  // ------------------------------------------------------------------ compliance
+
+  /** Per-device compliance findings, computed server-side so every client sees the same result. */
+  compliance(sessionId: string): { deviceId: string; deviceName: string; issues: ComplianceIssue[] }[] {
+    const { user } = this.requireSession(sessionId);
+    this.guard(user, 'device.read');
+    const now = this.clock();
+    return this.state.devices
+      .filter((d) => d.state !== 'retired' && d.state !== 'wiped')
+      .map((d) => ({ deviceId: d.id, deviceName: displayName(d), issues: complianceIssues(d, now) }))
+      .sort((a, b) => b.issues.length - a.issues.length);
+  }
+
+  // ------------------------------------------------------------------ app catalogue & settings
+
+  getSettings(sessionId: string): OrgSettings {
+    this.requireSession(sessionId);
+    return structuredClone(this.state.settings!);
+  }
+
+  async updateSettings(sessionId: string, patch: Partial<Pick<OrgSettings, 'orgName' | 'dpoContact' | 'siemWebhookUrl'>>): Promise<OrgSettings> {
+    const { user } = this.requireSession(sessionId);
+    this.guard(user, 'settings.manage');
+    const st = this.state.settings!;
+    if (patch.orgName !== undefined) {
+      const v = String(patch.orgName).trim();
+      if (!v || v.length > 80 || /[<>]/.test(v)) throw new ApiError(422, 'invalid_org', 'Invalid organisation name');
+      st.orgName = v;
+    }
+    if (patch.dpoContact !== undefined) {
+      const v = String(patch.dpoContact).trim();
+      if (v.length > 200 || /[<>]/.test(v)) throw new ApiError(422, 'invalid_contact', 'Invalid contact');
+      st.dpoContact = v;
+    }
+    if (patch.siemWebhookUrl !== undefined) {
+      const v = String(patch.siemWebhookUrl).trim();
+      if (v && !/^https:\/\/[^\s]+$/.test(v)) throw new ApiError(422, 'invalid_url', 'Webhook must be an https:// URL');
+      st.siemWebhookUrl = v || undefined;
+    }
+    this.audit.append({ at: this.clock(), actor: user.id, actorRole: user.role, action: 'settings.updated', detail: { fields: Object.keys(patch) } });
+    this.persist();
+    return structuredClone(st);
+  }
+
+  async upsertApp(sessionId: string, app: AppCatalogEntry): Promise<AppCatalogEntry[]> {
+    const { user } = this.requireSession(sessionId);
+    this.guard(user, 'apps.manage');
+    const pkg = String(app.packageName ?? '').trim();
+    if (!/^[a-z][a-z0-9_]*(\.[a-z0-9_]+)+$/.test(pkg)) throw new ApiError(422, 'invalid_package', 'Invalid package name');
+    if (!/^https:\/\/[^\s]+$/.test(String(app.url ?? ''))) throw new ApiError(422, 'invalid_url', 'APK URL must be https://');
+    if (!/^[0-9a-f]{64}$/.test(String(app.sha256 ?? '').toLowerCase())) throw new ApiError(422, 'invalid_hash', 'SHA-256 must be 64 hex characters');
+    const name = String(app.name ?? '').trim().slice(0, 80) || pkg;
+    const entry: AppCatalogEntry = { packageName: pkg, name, url: app.url, sha256: app.sha256.toLowerCase() };
+    const apps = this.state.settings!.apps;
+    const i = apps.findIndex((a) => a.packageName === pkg);
+    if (i >= 0) apps[i] = entry;
+    else apps.push(entry);
+    this.audit.append({ at: this.clock(), actor: user.id, actorRole: user.role, action: 'apps.upserted', detail: { packageName: pkg, sha256: entry.sha256 } });
+    this.persist();
+    return structuredClone(apps);
+  }
+
+  async removeApp(sessionId: string, packageName: string): Promise<AppCatalogEntry[]> {
+    const { user } = this.requireSession(sessionId);
+    this.guard(user, 'apps.manage');
+    const st = this.state.settings!;
+    st.apps = st.apps.filter((a) => a.packageName !== packageName);
+    this.audit.append({ at: this.clock(), actor: user.id, actorRole: user.role, action: 'apps.removed', detail: { packageName } });
+    this.persist();
+    return structuredClone(st.apps);
+  }
+
+  /** The notice shown to employees, personalised with the organisation's name and DPO contact. */
+  notice(): Notice {
+    const st = this.state?.settings ?? defaultSettings();
+    return {
+      ...COLLECTION_NOTICE,
+      collected: [...COLLECTION_NOTICE.collected],
+      notCollected: [...COLLECTION_NOTICE.notCollected],
+      title: `${st.orgName} — company device notice`,
+      rights: st.dpoContact ? `${COLLECTION_NOTICE.rights} Contact: ${st.dpoContact}.` : COLLECTION_NOTICE.rights,
+    };
+  }
+
+  // ------------------------------------------------------------------ privacy: data-subject access request
+
+  /** Everything held about one employee (DSAR). Restricted to Security and always audited. */
+  async exportEmployeeData(sessionId: string, employeeId: string, ticket: string): Promise<string> {
+    const { user } = this.requireSession(sessionId);
+    this.guard(user, 'privacy.dsar');
+    if (!ticket || !/^[A-Z][A-Z0-9]{1,9}-\d{1,8}$/.test(ticket.trim())) throw new ApiError(422, 'ticket_required', 'A DSAR ticket reference is required');
+    const emp = this.state.employees.find((e) => e.id === employeeId);
+    if (!emp) throw new ApiError(404, 'not_found', 'Employee not found');
+    const deviceIds = new Set(
+      this.state.devices.filter((d) => d.assignedUserId === emp.id).map((d) => d.id),
+    );
+    // devices they held in the past (from the audit trail)
+    for (const r of this.state.audit) {
+      const after = (r.detail as { after?: { assignedUserId?: string } } | undefined)?.after;
+      if (r.action === 'device.updated' && after?.assignedUserId === emp.id && r.target) deviceIds.add(r.target);
+    }
+    const devices = this.state.devices.filter((d) => deviceIds.has(d.id)).map((d) => {
+      const { transparencyKey: _t, cert: _c, pushToken: _p, ...rest } = d;
+      return rest;
+    });
+    const commands = this.state.commands.filter((c) => deviceIds.has(c.deviceId)).map(({ envelope: _e, ...c }) => c);
+    const locations = [];
+    for (const l of this.state.locations.filter((x) => deviceIds.has(x.deviceId))) {
+      locations.push({ deviceId: l.deviceId, ticket: l.ticket, tier: l.tier, receivedAt: l.receivedAt, fix: await openJson<LocationFix>(l.sealed, this.state.keys.locationKey) });
+    }
+    this.audit.append({ at: this.clock(), actor: user.id, actorRole: user.role, action: 'privacy.dsar_exported', target: emp.id, ticket: ticket.trim(), detail: { devices: devices.length, locations: locations.length } });
+    this.persist();
+    return JSON.stringify({ generatedAt: this.clock(), organisation: this.state.settings!.orgName, employee: emp, devices, commands, locations, notice: this.notice() }, null, 2);
   }
 
   // ------------------------------------------------------------------ misc read models
@@ -1098,7 +1490,7 @@ function clamp(n: unknown, min: number, max: number, dflt: number): number {
 }
 
 function sanitiseTelemetry(t: Telemetry): Telemetry {
-  const integrity = ['MEETS_STRONG_INTEGRITY', 'MEETS_DEVICE_INTEGRITY', 'MEETS_BASIC_INTEGRITY', 'FAILED'].includes(t.integrity) ? t.integrity : 'FAILED';
+  const integrity = ['MEETS_STRONG_INTEGRITY', 'MEETS_DEVICE_INTEGRITY', 'MEETS_BASIC_INTEGRITY', 'NOT_EVALUATED', 'FAILED'].includes(t.integrity) ? t.integrity : 'FAILED';
   return {
     batteryLevel: clamp(t.batteryLevel, 0, 100, 0),
     batteryHealth: (['good', 'fair', 'poor'] as const).includes(t.batteryHealth) ? t.batteryHealth : 'fair',
@@ -1110,7 +1502,7 @@ function sanitiseTelemetry(t: Telemetry): Telemetry {
   };
 }
 
-function sanitiseParams(type: CommandType, p: Record<string, unknown>): Record<string, unknown> {
+function sanitiseParams(type: CommandType, p: Record<string, unknown>, apps: AppCatalogEntry[]): Record<string, unknown> {
   switch (type) {
     case 'LOST_MODE_ON':
       return {
@@ -1120,7 +1512,10 @@ function sanitiseParams(type: CommandType, p: Record<string, unknown>): Record<s
     case 'INSTALL_APP': {
       const pkg = String(p.packageName ?? '');
       if (!/^[a-z][a-z0-9_]*(\.[a-z0-9_]+)+$/.test(pkg)) throw new ApiError(422, 'invalid_package', 'Invalid package name');
-      return { packageName: pkg };
+      // Only apps in the approved catalogue can be pushed; the device verifies the SHA-256 before installing.
+      const app = apps.find((a) => a.packageName === pkg);
+      if (!app) throw new ApiError(422, 'not_in_catalogue', 'App is not in the approved app catalogue');
+      return { packageName: app.packageName, url: app.url, sha256: app.sha256, name: app.name };
     }
     case 'LOCK':
       return { message: String(p.message ?? '').slice(0, 120) };
@@ -1137,6 +1532,52 @@ export function withinWorkingHours(policy: DevicePolicy, at: number): boolean {
   const day = WEEKDAYS.indexOf(parts.find((p) => p.type === 'weekday')?.value ?? '');
   const hour = Number(parts.find((p) => p.type === 'hour')?.value);
   return policy.workingHours.days.includes(day) && hour >= policy.workingHours.startHour && hour < policy.workingHours.endHour;
+}
+
+export type Notice = Omit<typeof COLLECTION_NOTICE, 'title' | 'rights' | 'collected' | 'notCollected'> & {
+  title: string;
+  rights: string;
+  collected: string[];
+  notCollected: string[];
+};
+
+export function defaultSettings(): OrgSettings {
+  return { orgName: 'FleetGuard', dpoContact: '', apps: [] };
+}
+
+export type ComplianceIssue =
+  | { code: 'not_acknowledged'; severity: 'warn'; text: string }
+  | { code: 'stale_checkin'; severity: 'bad'; text: string }
+  | { code: 'never_checked_in'; severity: 'bad'; text: string }
+  | { code: 'low_battery'; severity: 'warn'; text: string }
+  | { code: 'integrity'; severity: 'bad' | 'warn'; text: string }
+  | { code: 'old_patch'; severity: 'warn' | 'bad'; text: string }
+  | { code: 'low_storage'; severity: 'warn'; text: string }
+  | { code: 'unassigned'; severity: 'warn'; text: string }
+  | { code: 'lost'; severity: 'bad'; text: string };
+
+/** Pure compliance rules (unit-tested). */
+export function complianceIssues(d: Device, now: number): ComplianceIssue[] {
+  const out: ComplianceIssue[] = [];
+  if (d.lostMode) out.push({ code: 'lost', severity: 'bad', text: 'Device is in Lost Mode' });
+  if (!d.policyAckAt) out.push({ code: 'not_acknowledged', severity: 'warn', text: 'Employee has not acknowledged the notice' });
+  if (!d.lastCheckinAt) out.push({ code: 'never_checked_in', severity: 'bad', text: 'Never checked in' });
+  else if (now - d.lastCheckinAt > STALE_CHECKIN_MS) out.push({ code: 'stale_checkin', severity: 'bad', text: `No check-in for ${Math.floor((now - d.lastCheckinAt) / 86_400_000)} day(s)` });
+  if (!d.label || !d.assignedUserId) out.push({ code: 'unassigned', severity: 'warn', text: 'Not named or not assigned to an employee' });
+  const t = d.telemetry;
+  if (t) {
+    if (t.batteryLevel < 15) out.push({ code: 'low_battery', severity: 'warn', text: `Battery ${t.batteryLevel}%` });
+    if (t.integrity === 'FAILED') out.push({ code: 'integrity', severity: 'bad', text: 'Play Integrity failed — possible rooted/tampered device' });
+    else if (t.integrity === 'NOT_EVALUATED') out.push({ code: 'integrity', severity: 'warn', text: 'Play Integrity not evaluated' });
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(t.patchLevel);
+    if (m) {
+      const ageDays = Math.floor((now - Date.UTC(+m[1], +m[2] - 1, +m[3])) / 86_400_000);
+      if (ageDays > 180) out.push({ code: 'old_patch', severity: 'bad', text: `Security patch ${ageDays} days old` });
+      else if (ageDays > 90) out.push({ code: 'old_patch', severity: 'warn', text: `Security patch ${ageDays} days old` });
+    }
+    if (t.storageTotalGb > 0 && t.storageFreeGb / t.storageTotalGb < 0.1) out.push({ code: 'low_storage', severity: 'warn', text: 'Less than 10% storage free' });
+  }
+  return out;
 }
 
 export { can };

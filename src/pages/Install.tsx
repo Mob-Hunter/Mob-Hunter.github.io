@@ -6,7 +6,7 @@ import { COLLECTION_NOTICE } from '../core/enrollment';
 export function InstallPage() {
   const { token = '' } = useParams();
   const rt = useRuntime();
-  const q = usePublicQuery(() => rt.backend.installPage(token), [token]);
+  const q = usePublicQuery(() => rt.api.installPage(token), [token]);
 
   return (
     <div className="public-page">

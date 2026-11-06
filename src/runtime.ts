@@ -1,13 +1,18 @@
 /**
- * Browser runtime: wires the reference backend to localStorage, seeds a demo
- * tenant on first visit, and runs the simulated devices (push wake → pull).
+ * Browser runtime. Picks the operating mode at start-up:
+ *  - server: the console is served by a FleetGuard server (/api/health answers) —
+ *    every call goes to the real backend over HTTPS with a session cookie.
+ *  - demo:   GitHub Pages (or offline APK) — the reference backend runs in the
+ *    browser, seeded with demo accounts and simulated phones.
  */
 import { Backend, type DemoAccount, type Store } from './core/backend';
-import type { BackendState, ProvisioningPayload } from './core/types';
+import type { BackendState, ProvisioningPayload, PublicUser } from './core/types';
 import { SimulatedAgent, newAgentFromProvisioning, type AgentState } from './core/agent';
 import { StubPushProvider } from './core/relay';
 import type { Role } from './core/rbac';
 import { totp } from './core/totp';
+import { LocalConsoleApi, RemoteConsoleApi, type ConsoleApi, type Health } from './api/console';
+import { HttpDeviceTransport } from './api/device';
 
 const STATE_KEY = 'fleetguard.state.v1';
 const AGENTS_KEY = 'fleetguard.agents.v1';
@@ -75,12 +80,55 @@ export const DEMO_PASSWORD = 'Demo-Passw0rd-2026';
 export class Runtime {
   agents = new Map<string, SimulatedAgent>();
   private listeners = new Set<() => void>();
-  private timer: ReturnType<typeof setInterval> | undefined;
+  private timers: ReturnType<typeof setInterval>[] = [];
   version = 0;
+  me: PublicUser | null = null;
 
-  private constructor(public backend: Backend, public demoAccounts: DemoAccount[]) {}
+  private constructor(
+    public readonly api: ConsoleApi,
+    public readonly health: Health,
+    /** only in demo mode */
+    public readonly backend: Backend | null,
+    public demoAccounts: DemoAccount[],
+  ) {}
+
+  get mode(): 'demo' | 'server' {
+    return this.api.mode;
+  }
+
+  static async detectServer(): Promise<Health | null> {
+    try {
+      const ctl = new AbortController();
+      const t = setTimeout(() => ctl.abort(), 2500);
+      const res = await fetch('./api/health', { signal: ctl.signal, credentials: 'same-origin' });
+      clearTimeout(t);
+      if (!res.ok || !(res.headers.get('content-type') ?? '').includes('json')) return null;
+      const j = (await res.json()) as Health;
+      return j?.service === 'fleetguard' && j.mode === 'server' ? j : null;
+    } catch {
+      return null;
+    }
+  }
 
   static async boot(onProgress?: (msg: string) => void): Promise<Runtime> {
+    onProgress?.('Connecting…');
+    const server = await Runtime.detectServer();
+    if (server) {
+      const api = new RemoteConsoleApi('./api');
+      const rt = new Runtime(api, server, null, []);
+      try {
+        rt.me = await api.me();
+      } catch {
+        rt.me = null;
+      }
+      rt.loadAgents();
+      // Server mode: refresh views periodically; test devices poll for commands.
+      rt.timers.push(setInterval(() => rt.emit(), 10_000));
+      rt.timers.push(setInterval(() => void rt.pollAgents(), 8_000));
+      rt.timers.push(setInterval(() => void rt.tickAll(), 30_000));
+      return rt;
+    }
+
     const store = new LocalStore();
     const firstRun = !store.load();
     onProgress?.(firstRun ? 'Generating signing keys…' : 'Opening console…');
@@ -91,12 +139,27 @@ export class Runtime {
     } catch {
       demo = [];
     }
-    const rt = new Runtime(backend, demo);
+    let rtRef: Runtime | null = null;
+    const api = new LocalConsoleApi(backend, {
+      get: () => safeGet(ss, SESSION_KEY),
+      set: (v) => {
+        if (v) safeSet(ss, SESSION_KEY, v);
+        else safeRemove(ss, SESSION_KEY);
+        rtRef?.emit();
+      },
+    });
+    const rt = new Runtime(api, await api.health(), backend, demo);
+    rtRef = rt;
     if (firstRun || demo.length === 0) await rt.seed(onProgress);
+    try {
+      rt.me = await api.me();
+    } catch {
+      rt.me = null;
+    }
     rt.loadAgents();
     (backend.push as StubPushProvider).onWake((deviceId) => rt.onWake(deviceId));
     backend.subscribe(() => rt.emit());
-    rt.timer = setInterval(() => void rt.tickAll(), 20_000);
+    rt.timers.push(setInterval(() => void rt.tickAll(), 20_000));
     // Keep several open tabs consistent: adopt whatever another tab just wrote.
     window.addEventListener('storage', (e) => {
       if (e.key === STATE_KEY) backend.reloadFromStore();
@@ -107,10 +170,11 @@ export class Runtime {
   }
 
   private async seed(onProgress?: (msg: string) => void) {
+    const backend = this.backend!;
     const accounts: DemoAccount[] = [];
     for (const p of DEMO_PEOPLE) {
       onProgress?.(`Creating ${p.name} (PBKDF2 210k)…`);
-      accounts.push(await this.backend.createUser({ ...p, password: DEMO_PASSWORD }));
+      accounts.push(await backend.createUser({ ...p, password: DEMO_PASSWORD }));
     }
     this.demoAccounts = accounts;
     safeSet(ls, DEMO_KEY, JSON.stringify(accounts));
@@ -119,40 +183,78 @@ export class Runtime {
       { name: 'Kavya Fernando', email: 'kavya.fernando@example.com', department: 'Sales' },
       { name: 'Ruwan Silva', email: 'ruwan.silva@example.com', department: 'Logistics' },
       { name: 'Ishara Jayasinghe', email: 'ishara.j@example.com', department: 'Finance' },
-    ].map((e) => this.backend.addEmployee(e));
+    ].map((e) => backend.addEmployee(e));
+
+    const sa = await this.signInDemo('SUPER_ADMIN');
+    await backend.updateSettings(sa, { orgName: 'Demo Company (Pvt) Ltd', dpoContact: 'dpo@example.com' });
+    await backend.upsertApp(sa, { packageName: 'com.example.timesheets', name: 'Timesheets', url: 'https://apps.example.com/timesheets-2.3.1.apk', sha256: 'a3f1c2d4e5b60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90' });
+    await backend.logout(sa);
 
     onProgress?.('Enrolling simulated devices…');
     const sid = await this.signInDemo('DEVICE_ADMIN');
     // Device 1: acknowledged, named and assigned.
-    const e1 = await this.backend.createEnrollment(sid, { note: 'Seed device 1' });
+    const e1 = await backend.createEnrollment(sid, { note: 'Seed device 1' });
     const a1 = await this.addAgent(e1.provisioning, { autoPull: true });
     a1.acknowledge();
     await a1.checkin();
-    await this.backend.updateDevice(sid, a1.state.deviceId!, { label: "Nimal's field phone", assignedUserId: emps[0].id });
+    await backend.updateDevice(sid, a1.state.deviceId!, { label: "Nimal's field phone", assignedUserId: emps[0].id });
     // Device 2: freshly enrolled, unnamed, awaiting the user's acknowledgement.
-    const e2 = await this.backend.createEnrollment(sid, { note: 'Seed device 2' });
+    const e2 = await backend.createEnrollment(sid, { note: 'Seed device 2' });
     await this.addAgent(e2.provisioning, { autoPull: true });
-    await this.backend.logout(sid);
+    await backend.logout(sid);
     this.saveAgents();
   }
 
   /** Used only for seeding: performs the real password + TOTP flow with the demo authenticator. */
   async signInDemo(role: Role): Promise<string> {
+    const backend = this.backend!;
     const acc = this.demoAccounts.find((a) => a.role === role)!;
-    const { challengeId } = await this.backend.login(acc.email, acc.password);
-    return (await this.backend.verifyMfa(challengeId, await totp(acc.totpSecret, Date.now()))).sessionId;
+    const { challengeId } = await backend.login(acc.email, acc.password);
+    return (await backend.verifyMfa(challengeId, await totp(acc.totpSecret, Date.now()))).sessionId;
+  }
+
+  // ---------------------------------------------------------------- auth state
+
+  async signedIn(user: PublicUser) {
+    this.me = user;
+    this.emit();
+  }
+
+  async signOut() {
+    try {
+      await this.api.logout();
+    } finally {
+      this.me = null;
+      this.emit();
+    }
+  }
+
+  /** Called when any call reports 401: drop the local idea of being signed in. */
+  sessionLost() {
+    if (this.me) {
+      this.me = null;
+      this.emit();
+    }
   }
 
   // ---------------------------------------------------------------- simulators
 
+  private agentFor(state: AgentState): SimulatedAgent {
+    return this.backend ? new SimulatedAgent(state, this.backend) : new SimulatedAgent(state, new HttpDeviceTransport(`${location.origin}${location.pathname.replace(/\/$/, '')}`));
+  }
+
   private loadAgents() {
     let states: AgentState[] = [];
     try {
-      states = JSON.parse(safeGet(ls, AGENTS_KEY) ?? '[]');
+      states = JSON.parse(safeGet(ls, this.agentsKey) ?? '[]');
     } catch {
       states = [];
     }
-    for (const s of states) this.agents.set(s.simId, new SimulatedAgent(s, this.backend));
+    for (const s of states) this.agents.set(s.simId, this.agentFor(s));
+  }
+
+  private get agentsKey() {
+    return this.backend ? AGENTS_KEY : `${AGENTS_KEY}.server`;
   }
 
   reloadAgents() {
@@ -162,12 +264,12 @@ export class Runtime {
   }
 
   saveAgents() {
-    safeSet(ls, AGENTS_KEY, JSON.stringify([...this.agents.values()].map((a) => a.state)));
+    safeSet(ls, this.agentsKey, JSON.stringify([...this.agents.values()].map((a) => a.state)));
     this.emit();
   }
 
   async addAgent(provisioning: ProvisioningPayload, opts: { autoPull?: boolean } = {}): Promise<SimulatedAgent> {
-    const agent = new SimulatedAgent(newAgentFromProvisioning(provisioning, { autoPull: opts.autoPull ?? true }), this.backend);
+    const agent = this.agentFor(newAgentFromProvisioning(provisioning, { autoPull: opts.autoPull ?? true }));
     await agent.enroll();
     await agent.checkin(); // like the real agent: first check-in right after enrolment
     this.agents.set(agent.state.simId, agent);
@@ -196,6 +298,20 @@ export class Runtime {
     }, 900);
   }
 
+  /** Server mode has no push to a browser: test devices poll. */
+  private async pollAgents() {
+    let changed = false;
+    for (const a of this.agents.values()) {
+      if (!a.state.autoPull || !a.enrolled) continue;
+      try {
+        changed = (await a.poll()).length > 0 || changed;
+      } catch {
+        /* revoked or offline */
+      }
+    }
+    if (changed) this.saveAgents();
+  }
+
   async tickAll() {
     for (const a of this.agents.values()) {
       try {
@@ -205,17 +321,6 @@ export class Runtime {
       }
     }
     this.saveAgents();
-  }
-
-  // ---------------------------------------------------------------- session
-
-  get sessionId(): string | null {
-    return safeGet(ss, SESSION_KEY);
-  }
-  set sessionId(v: string | null) {
-    if (v) safeSet(ss, SESSION_KEY, v);
-    else safeRemove(ss, SESSION_KEY);
-    this.emit();
   }
 
   // ---------------------------------------------------------------- events
@@ -231,7 +336,7 @@ export class Runtime {
   }
 
   resetDemo() {
-    if (this.timer) clearInterval(this.timer);
+    for (const t of this.timers) clearInterval(t);
     for (const k of [STATE_KEY, AGENTS_KEY, DEMO_KEY]) safeRemove(ls, k);
     safeRemove(ss, SESSION_KEY);
   }

@@ -18,12 +18,14 @@ const COMMAND_HELP: Record<CommandType, string> = {
 
 export function DeviceDetailPage() {
   const { id = '' } = useParams();
-  const rt = useRuntime();
   const me = useMe()!;
-  const [device, err] = useQuery((sid) => rt.backend.getDevice(sid, id), [id]);
-  const [commands] = useQuery((sid) => rt.backend.listCommands(sid, id), [id]);
-  const [employees] = useQuery((sid) => rt.backend.listEmployees(sid));
-  if (err) return <ErrorBox>{err}</ErrorBox>;
+  const [device, err] = useQuery((api) => api.getDevice(id), [id]);
+  const [commands] = useQuery((api) => api.listCommands(id), [id]);
+  const [employees] = useQuery((api) => api.listEmployees());
+  const canUpdate = useCan('device.update');
+  const canRetire = useCan('device.retire');
+  const canLocate = useCan('location.read');
+  if (err && !device) return <ErrorBox>{err}</ErrorBox>;
   if (!device) return null;
   const allowed = COMMAND_TYPES.filter((t) => can(me.role, `command.${t}`));
 
@@ -88,7 +90,7 @@ export function DeviceDetailPage() {
         </Card>
       </div>
 
-      {useCan('device.update') && <RenameCard id={device.id} label={device.label} assigned={device.assignedUserId} employees={employees ?? []} />}
+      {canUpdate && <RenameCard id={device.id} label={device.label} assigned={device.assignedUserId} employees={(employees ?? []).filter((e) => e.status !== 'leaver')} />}
 
       <Card title="Commands">
         {allowed.length ? (
@@ -134,7 +136,8 @@ export function DeviceDetailPage() {
       </Card>
 
       <PolicyCard deviceId={device.id} policy={device.policy} />
-      {useCan('location.read') && <DeviceLocations deviceId={device.id} />}
+      {canRetire && device.state !== 'retired' && <RetireCard deviceId={device.id} />}
+      {canLocate && <DeviceLocations deviceId={device.id} />}
     </div>
   );
 }
@@ -150,7 +153,7 @@ function RenameCard({ id, label, assigned, employees }: { id: string; label: str
         className="row-form"
         onSubmit={(e) => {
           e.preventDefault();
-          void run(() => rt.backend.updateDevice(rt.sessionId!, id, { label: name.trim() || null, assignedUserId: emp || null }), 'Saved — recorded in the audit log');
+          void run(() => rt.api.updateDevice(id, { label: name.trim() || null, assignedUserId: emp || null }), 'Saved — recorded in the audit log');
         }}
       >
         <Field label="Device name">
@@ -181,7 +184,8 @@ function CommandForm({ deviceId, allowed, disabled }: { deviceId: string; allowe
   const [reason, setReason] = useState('');
   const [message, setMessage] = useState('This phone belongs to the company. Please call IT.');
   const [phone, setPhone] = useState('+94 11 000 0000');
-  const [pkg, setPkg] = useState('com.company.timesheets');
+  const [settings] = useQuery((api) => api.getSettings(), [], { live: false });
+  const [pkg, setPkg] = useState('');
   const [confirmWipe, setConfirmWipe] = useState('');
   const { run, busy } = useAction();
   const needsTicket = TICKET_REQUIRED.has(type);
@@ -190,7 +194,7 @@ function CommandForm({ deviceId, allowed, disabled }: { deviceId: string; allowe
     e.preventDefault();
     const params = type === 'LOST_MODE_ON' ? { message, phone } : type === 'INSTALL_APP' ? { packageName: pkg } : {};
     void run(async () => {
-      const c = await rt.backend.issueCommand(rt.sessionId!, deviceId, { type, ticket: ticket.trim().toUpperCase() || undefined, reason, params });
+      const c = await rt.api.issueCommand(deviceId, { type, ticket: ticket.trim().toUpperCase() || undefined, reason, params });
       setReason('');
       setConfirmWipe('');
       return c;
@@ -232,8 +236,15 @@ function CommandForm({ deviceId, allowed, disabled }: { deviceId: string; allowe
         </div>
       )}
       {type === 'INSTALL_APP' && (
-        <Field label="Package name">
-          <input value={pkg} onChange={(e) => setPkg(e.target.value)} />
+        <Field label="App (approved catalogue)" hint={<Link to="/settings">Manage the app catalogue</Link>}>
+          <select value={pkg} onChange={(e) => setPkg(e.target.value)} required>
+            <option value="">— choose an app —</option>
+            {settings?.apps.map((a) => (
+              <option key={a.packageName} value={a.packageName}>
+                {a.name} ({a.packageName})
+              </option>
+            ))}
+          </select>
         </Field>
       )}
       {type === 'WIPE' && (
@@ -255,10 +266,10 @@ function ApproveButtons({ id }: { id: string }) {
   const { run, busy } = useAction();
   return (
     <div className="btn-row">
-      <button className="btn btn-sm btn-danger" disabled={busy} onClick={() => void run(() => rt.backend.approveCommand(rt.sessionId!, id, true), 'Approved and relayed')}>
+      <button className="btn btn-sm btn-danger" disabled={busy} onClick={() => void run(() => rt.api.approveCommand(id, true), 'Approved and relayed')}>
         Approve
       </button>
-      <button className="btn btn-sm" disabled={busy} onClick={() => void run(() => rt.backend.approveCommand(rt.sessionId!, id, false), 'Rejected')}>
+      <button className="btn btn-sm" disabled={busy} onClick={() => void run(() => rt.api.approveCommand(id, false), 'Rejected')}>
         Reject
       </button>
     </div>
@@ -289,7 +300,7 @@ function PolicyCard({ deviceId, policy }: { deviceId: string; policy: import('..
           onSubmit={(e) => {
             e.preventDefault();
             void run(async () => {
-              await rt.backend.updatePolicy(rt.sessionId!, deviceId, { continuousLocation: !policy.continuousLocation }, justification);
+              await rt.api.updatePolicy(deviceId, { continuousLocation: !policy.continuousLocation }, justification);
               setJustification('');
             }, 'Policy updated; device told to sync');
           }}
@@ -307,11 +318,10 @@ function PolicyCard({ deviceId, policy }: { deviceId: string; policy: import('..
 }
 
 function DeviceLocations({ deviceId }: { deviceId: string }) {
-  const rt = useRuntime();
   const [ticket, setTicket] = useState('');
   const [submitted, setSubmitted] = useState<string | null>(null);
   // Deliberately NOT re-run on every change: each view is an audited access.
-  const q = useAsyncQuery((sid) => rt.backend.listLocationResults(sid, { deviceId, ticket: submitted! }), [deviceId, submitted], !!submitted);
+  const q = useAsyncQuery((api) => api.listLocationResults({ deviceId, ticket: submitted! }), [deviceId, submitted], !!submitted);
   return (
     <Card title="Location results (Location Operator)">
       <form
@@ -338,6 +348,34 @@ function DeviceLocations({ deviceId }: { deviceId: string }) {
           <p className="tiny muted">Your view was recorded in the audit log against {submitted}.</p>
         </>
       )}
+    </Card>
+  );
+}
+
+function RetireCard({ deviceId }: { deviceId: string }) {
+  const rt = useRuntime();
+  const [reason, setReason] = useState('');
+  const { run, busy } = useAction();
+  return (
+    <Card title="Retire device">
+      <p className="small muted">
+        Use when a phone is returned, lost for good or replaced. Its certificate is revoked immediately, so it can no longer reach the server; queued commands are
+        cancelled. Wipe it first if it is still in someone&apos;s hands.
+      </p>
+      <form
+        className="row-form"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void run(() => rt.api.retireDevice(deviceId, reason), 'Device retired and certificate revoked');
+        }}
+      >
+        <Field label="Reason">
+          <input value={reason} onChange={(e) => setReason(e.target.value)} required minLength={5} placeholder="e.g. Returned by leaver, screen broken" />
+        </Field>
+        <button className="btn btn-danger" disabled={busy}>
+          Retire
+        </button>
+      </form>
     </Card>
   );
 }

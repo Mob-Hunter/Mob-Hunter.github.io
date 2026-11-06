@@ -69,11 +69,35 @@ export const RISKS: Risk[] = [
     issue: 'Hosting on GitHub Pages',
     why: 'GitHub Pages is static, public hosting: it cannot keep server secrets, terminate mutual TLS, send FCM/APNs pushes or run scheduled jobs. A backend that runs in the browser is not a trust boundary.',
     fix: [
-      'Use this Pages build as the console UI, demo and acceptance-test harness only — with no real employee data.',
-      'Deploy the same API contract on Cloudflare Workers + Durable Objects (Phase 0–1), keep keys in Workers Secrets/KMS, and point the console at it.',
+      'Use the GitHub Pages build only for demos, training and acceptance tests — never with real employee data.',
+      'Run production on the included Cloudflare Worker (docs/DEPLOYMENT.md) with keys in Workers Secrets.',
       'Put the production console behind Cloudflare Access (SSO + MFA) — never on a public github.io URL.',
     ],
     built: 'All data stays in the visitor’s own browser storage; nothing is sent anywhere. A strict Content-Security-Policy blocks third-party scripts.',
+  },
+  {
+    level: 'High',
+    issue: 'Agent APK signing key controls every phone',
+    why: 'Whoever holds the agent signing key can ship an "update" that every enrolled device-owner phone accepts.',
+    fix: [
+      'Generate the release keystore offline; keep it in an HSM or vault with two named custodians; give CI access only via encrypted secrets.',
+      'Never put debug-signed evaluation APKs on staff phones.',
+    ],
+    built: 'Release signing is read only from CI secrets; the provisioning QR pins the signing-certificate checksum, so Android refuses an agent signed with any other key.',
+  },
+  {
+    level: 'Medium',
+    issue: 'Admin console on a phone',
+    why: 'A lost, unlocked admin phone could be used to act as that administrator.',
+    fix: ['Use SSO with MFA and short sessions; enrol admin phones too; revoke sessions when a phone is lost.'],
+    built: 'The console APK is locked to one HTTPS origin with backups disabled; sessions are HttpOnly cookies with 30-minute idle expiry and central revocation.',
+  },
+  {
+    level: 'Medium',
+    issue: 'SIEM forwarding and DSAR exports contain personal data',
+    why: 'Audit rows and DSAR files identify staff and their devices.',
+    fix: ['Forward only to a SIEM covered by your DPA and retention policy; route DSAR exports through the DPO.'],
+    built: 'Webhooks must be HTTPS and are HMAC-signed; a DSAR export is Security-only, needs a ticket and is audited.',
   },
   {
     level: 'Low',

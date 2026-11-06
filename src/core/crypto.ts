@@ -11,7 +11,7 @@
  */
 import * as ed from '@noble/ed25519';
 
-const subtle = globalThis.crypto.subtle;
+const subtle = crypto.subtle;
 const enc = new TextEncoder();
 const dec = new TextDecoder();
 
@@ -43,7 +43,7 @@ export function fromB64(b64: string): Uint8Array {
 
 export function randomBytes(n: number): Uint8Array {
   const b = new Uint8Array(n);
-  globalThis.crypto.getRandomValues(b);
+  crypto.getRandomValues(b);
   return b;
 }
 
@@ -118,8 +118,8 @@ export function fingerprint(publicKeyHex: string): Promise<string> {
 // ---------------------------------------------------------------- AES-GCM
 
 export async function generateAesKey(): Promise<JsonWebKey> {
-  const key = await subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt']);
-  return subtle.exportKey('jwk', key);
+  const key = (await subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt'])) as CryptoKey;
+  return (await subtle.exportKey('jwk', key)) as JsonWebKey;
 }
 
 async function importAes(jwk: JsonWebKey): Promise<CryptoKey> {
@@ -164,4 +164,77 @@ export async function hashPassword(password: string, saltHex: string, iterations
     256,
   );
   return toHex(new Uint8Array(bits));
+}
+
+// ---------------------------------------------------------------- ECDSA P-256 (Android Keystore device keys)
+
+/** Converts an ASN.1 DER ECDSA signature (what Android/Java produce) to raw r||s (what WebCrypto expects). */
+export function derToRawEcdsa(der: Uint8Array, size = 32): Uint8Array {
+  let i = 0;
+  const expect = (b: number) => {
+    if (der[i++] !== b) throw new Error('bad DER');
+  };
+  const readLen = (): number => {
+    let len = der[i++];
+    if (len & 0x80) {
+      const n = len & 0x7f;
+      if (n < 1 || n > 2) throw new Error('bad DER length');
+      len = 0;
+      for (let k = 0; k < n; k++) len = (len << 8) | der[i++];
+    }
+    return len;
+  };
+  expect(0x30);
+  const total = readLen();
+  if (total !== der.length - i) throw new Error('bad DER length');
+  const out = new Uint8Array(size * 2);
+  for (const off of [0, size]) {
+    expect(0x02);
+    let len = readLen();
+    let start = i;
+    while (len > size && der[start] === 0) {
+      start++;
+      len--;
+    }
+    if (len > size) throw new Error('integer too long');
+    out.set(der.subarray(start, start + len), off + size - len);
+    i = start + len;
+  }
+  if (i !== der.length) throw new Error('trailing DER bytes');
+  return out;
+}
+
+/** Verifies an ES256 (ECDSA P-256 / SHA-256) signature; key is hex SPKI DER, signature hex DER or raw. */
+export async function verifyEs256(message: string | Uint8Array, signatureHex: string, spkiHex: string): Promise<boolean> {
+  try {
+    const key = await subtle.importKey('spki', fromHex(spkiHex) as BufferSource, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['verify']);
+    const sigBytes = fromHex(signatureHex);
+    const raw = sigBytes.length === 64 ? sigBytes : derToRawEcdsa(sigBytes);
+    const data = typeof message === 'string' ? enc.encode(message) : message;
+    return await subtle.verify({ name: 'ECDSA', hash: 'SHA-256' }, key, raw as BufferSource, data as BufferSource);
+  } catch {
+    return false;
+  }
+}
+
+/** Test/simulator helper: generate an ES256 key pair as hex SPKI + exported JWK private key. */
+export async function generateEs256(): Promise<{ publicKey: string; privateJwk: JsonWebKey }> {
+  const kp = (await subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify'])) as CryptoKeyPair;
+  const spki = new Uint8Array((await subtle.exportKey('spki', kp.publicKey)) as ArrayBuffer);
+  return { publicKey: toHex(spki), privateJwk: (await subtle.exportKey('jwk', kp.privateKey)) as JsonWebKey };
+}
+
+export async function signEs256(message: string, privateJwk: JsonWebKey): Promise<string> {
+  const key = await subtle.importKey('jwk', privateJwk, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']);
+  return toHex(new Uint8Array(await subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, key, enc.encode(message) as BufferSource)));
+}
+
+/** True when the hex string is an importable P-256 SubjectPublicKeyInfo. */
+export async function isP256Spki(spkiHex: string): Promise<boolean> {
+  try {
+    await subtle.importKey('spki', fromHex(spkiHex) as BufferSource, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['verify']);
+    return true;
+  } catch {
+    return false;
+  }
 }

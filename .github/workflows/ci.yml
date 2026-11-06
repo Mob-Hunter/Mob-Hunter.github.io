@@ -8,8 +8,13 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  test:
+  web:
+    name: Web console + Worker
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -20,16 +25,47 @@ jobs:
       - run: npm ci
       - name: Dependency audit
         run: npm audit --audit-level=high
-      - name: Type-check
+      - name: Type-check (console + Worker)
         run: npm run typecheck
-      - name: Unit & integration tests
+      - name: Unit, integration and HTTP API tests
         run: npm test
       - name: Build
         run: npm run build
       - name: Install Chromium for E2E
         run: npx playwright install --with-deps chromium
-      - name: End-to-end tests
+      - name: E2E — demo mode (static hosting)
         run: npm run test:e2e
+      - name: E2E — server mode (Worker in workerd)
+        run: npm run test:e2e:server
+
+  android:
+    name: Android APKs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci && npm run build
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platforms;android-36 build-tools;36.0.0
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Agent unit tests + release APKs
+        working-directory: android
+        run: ./gradlew --no-daemon :agent:testDebugUnitTest :agent:assembleRelease :console:assembleRelease
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fleetguard-apks
+          path: |
+            android/agent/build/outputs/apk/release/*.apk
+            android/console/build/outputs/apk/release/*.apk
+          retention-days: 14
 
   codeql:
     runs-on: ubuntu-latest

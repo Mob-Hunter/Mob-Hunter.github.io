@@ -1,0 +1,29 @@
+name: Release APKs
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci && npm run build
+      - uses: ./.github/actions/android-build
+        with:
+          keystore-base64: ${{ secrets.FG_KEYSTORE_BASE64 }}
+          keystore-password: ${{ secrets.FG_KEYSTORE_PASSWORD }}
+          key-alias: ${{ secrets.FG_KEY_ALIAS }}
+          key-password: ${{ secrets.FG_KEY_PASSWORD }}
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: apk-out/*
+          generate_release_notes: true

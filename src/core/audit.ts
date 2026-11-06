@@ -36,7 +36,7 @@ function payloadOf(row: AuditRow): AuditPayload {
 }
 
 export class AuditLog {
-  constructor(private readonly rows: AuditRow[]) {}
+  constructor(private readonly rows: AuditRow[], private readonly onAppend?: (row: AuditRow) => void) {}
 
   /** Read-only view; callers cannot mutate history. */
   all(): readonly AuditRow[] {
@@ -55,6 +55,11 @@ export class AuditLog {
     const hash = computeHash(prevHash, payload);
     const row: AuditRow = { ...payload, prevHash, hash };
     this.rows.push(row);
+    try {
+      this.onAppend?.({ ...row });
+    } catch {
+      /* forwarding must never break the write */
+    }
     return { ...row };
   }
 }

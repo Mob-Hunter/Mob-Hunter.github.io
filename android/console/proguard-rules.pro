@@ -1,0 +1,1 @@
+-keepclassmembers class com.fleetguard.console.NativeBridge { @android.webkit.JavascriptInterface <methods>; }

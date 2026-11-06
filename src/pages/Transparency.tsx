@@ -5,7 +5,7 @@ import { Badge, Card, Empty, ErrorBox, MiniMap, fmtTime, usePublicQuery, useRunt
 export function TransparencyPage() {
   const { deviceId = '', key = '' } = useParams();
   const rt = useRuntime();
-  const q = usePublicQuery(() => rt.backend.transparency(deviceId, key), [deviceId, key, rt.version]);
+  const q = usePublicQuery(() => rt.api.transparency(deviceId, key), [deviceId, key, rt.version]);
 
   return (
     <div className="public-page">

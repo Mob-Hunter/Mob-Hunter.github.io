@@ -4,9 +4,9 @@ import type { ChainVerification } from '../core/audit';
 
 export function AuditPage() {
   const rt = useRuntime();
-  const [rows, err] = useQuery((sid) => rt.backend.listAudit(sid));
-  const [users] = useQuery((sid) => rt.backend.listUsers(sid));
-  const [devices] = useQuery((sid) => rt.backend.listDevices(sid));
+  const [rows, err] = useQuery((api) => api.listAudit());
+  const [users] = useQuery((api) => api.listUsers());
+  const [devices] = useQuery((api) => api.listDevices());
   const [filter, setFilter] = useState('');
   const [verification, setVerification] = useState<ChainVerification | null>(null);
   const canExport = useCan('audit.export');
@@ -27,7 +27,7 @@ export function AuditPage() {
       <div className="page-head">
         <h1>Audit log</h1>
         <div className="btn-row">
-          <button className="btn" disabled={busy} onClick={() => void run(async () => setVerification(await rt.backend.verifyAudit(rt.sessionId!)))}>
+          <button className="btn" disabled={busy} onClick={() => void run(async () => setVerification(await rt.api.verifyAudit()))}>
             Verify hash chain
           </button>
           {canExport && (
@@ -35,7 +35,7 @@ export function AuditPage() {
               className="btn"
               disabled={busy}
               onClick={() =>
-                void run(async () => download(`audit-${new Date().toISOString().slice(0, 10)}.json`, await rt.backend.exportAudit(rt.sessionId!)), 'Exported (export recorded in the log)')
+                void run(async () => download(`audit-${new Date().toISOString().slice(0, 10)}.json`, await rt.api.exportAudit()), 'Exported (export recorded in the log)')
               }
             >
               Export for SIEM
