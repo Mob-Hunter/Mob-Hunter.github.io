@@ -82,7 +82,7 @@ code, pre { font-family: var(--mono); font-size: .85em; }
 .navlink:hover { background: var(--surface-2); }
 .navlink.active { background: var(--primary); color: var(--primary-ink); }
 .navicon { width: 1.2em; text-align: center; }
-.content { padding: 16px; padding-bottom: max(24px, env(safe-area-inset-bottom)); min-width: 0; }
+.content { padding: 16px; padding-bottom: calc(96px + env(safe-area-inset-bottom)); min-width: 0; }
 .page { max-width: 1100px; margin: 0 auto; display: grid; gap: 14px; }
 .page.narrow { max-width: 760px; }
 .page-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
@@ -242,7 +242,7 @@ pre.code { background: var(--surface-2); padding: 10px; border-radius: 8px; over
 
 /* toasts */
 .toasts { position: fixed; z-index: 50; left: 16px; right: 16px; bottom: max(16px, env(safe-area-inset-bottom)); display: grid; gap: 8px; justify-items: center; pointer-events: none; }
-.toast { pointer-events: auto; max-width: 520px; width: 100%; padding: 10px 14px; border-radius: 10px; box-shadow: 0 6px 24px rgb(0 0 0 / 20%); background: var(--surface); border: 1px solid var(--border); font-weight: 500; }
+.toast { pointer-events: none; max-width: 520px; width: 100%; padding: 10px 14px; border-radius: 10px; box-shadow: 0 6px 24px rgb(0 0 0 / 20%); background: var(--surface); border: 1px solid var(--border); font-weight: 500; }
 .toast-ok { border-left: 5px solid var(--ok); }
 .toast-err { border-left: 5px solid var(--bad); }
 .toast-info { border-left: 5px solid var(--info); }
