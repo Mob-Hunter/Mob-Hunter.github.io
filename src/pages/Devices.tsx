@@ -6,17 +6,17 @@ import type { DeviceView } from '../core/backend';
 export function stateBadge(d: Pick<DeviceView, 'state' | 'lostMode' | 'policyAckAt'>) {
   if (d.lostMode) return <Badge tone="bad">Lost Mode</Badge>;
   if (d.state === 'wiped') return <Badge tone="neutral">Wiped</Badge>;
+  if (d.state === 'retired') return <Badge tone="neutral">Retired</Badge>;
   if (d.state === 'enrolled') return <Badge tone="warn">Awaiting notice ack</Badge>;
   return <Badge tone="ok">Active</Badge>;
 }
 
 export function DevicesPage() {
-  const rt = useRuntime();
   const [params, setParams] = useSearchParams();
   // Local state keeps the checkbox instant; the URL keeps the filter shareable.
   const [unnamedOnly, setUnnamedOnly] = useState(params.get('unnamed') === '1');
   const [q, setQ] = useState('');
-  const [devices, err] = useQuery((sid) => rt.backend.listDevices(sid, { q, unnamedOnly }), [q, unnamedOnly]);
+  const [devices, err] = useQuery((api) => api.listDevices({ q, unnamedOnly }), [q, unnamedOnly]);
   const canRename = useCan('device.update');
 
   return (
@@ -78,7 +78,7 @@ function InlineRename({ id }: { id: string }) {
       className="inline-form"
       onSubmit={(e) => {
         e.preventDefault();
-        void run(() => rt.backend.updateDevice(rt.sessionId!, id, { label: name }), 'Device renamed');
+        void run(() => rt.api.updateDevice(id, { label: name }), 'Device renamed');
       }}
     >
       <input placeholder="Name this device" value={name} onChange={(e) => setName(e.target.value)} required maxLength={80} aria-label="New device name" />

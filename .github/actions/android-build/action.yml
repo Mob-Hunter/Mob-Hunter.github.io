@@ -1,0 +1,38 @@
+name: Build FleetGuard APKs
+description: Builds the web console, then the signed agent + console APKs into ./apk-out
+inputs:
+  keystore-base64: { required: false, default: '' }
+  keystore-password: { required: false, default: '' }
+  key-alias: { required: false, default: '' }
+  key-password: { required: false, default: '' }
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-java@v4
+      with:
+        distribution: temurin
+        java-version: 21
+    - uses: android-actions/setup-android@v3
+      with:
+        packages: platforms;android-36 build-tools;36.0.0
+    - uses: gradle/actions/setup-gradle@v4
+    - name: Build APKs
+      shell: bash
+      env:
+        KS_B64: ${{ inputs.keystore-base64 }}
+        FG_KEYSTORE_PASSWORD: ${{ inputs.keystore-password }}
+        FG_KEY_ALIAS: ${{ inputs.key-alias }}
+        FG_KEY_PASSWORD: ${{ inputs.key-password }}
+      run: |
+        if [ -n "$KS_B64" ]; then
+          echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          export FG_KEYSTORE_PATH="$RUNNER_TEMP/release.jks"
+        else
+          echo "::warning::No signing keystore secret — APKs are debug-signed (evaluation only)."
+        fi
+        (cd android && ./gradlew --no-daemon :agent:testDebugUnitTest :agent:assembleRelease :console:assembleRelease)
+        mkdir -p apk-out
+        cp android/agent/build/outputs/apk/release/agent-release.apk apk-out/fleetguard-agent.apk
+        cp android/console/build/outputs/apk/release/console-release.apk apk-out/fleetguard-console.apk
+        (cd apk-out && sha256sum *.apk > SHA256SUMS.txt)
+        echo "Provisioning signature checksum: $(android/scripts/signature-checksum.sh apk-out/fleetguard-agent.apk)" | tee apk-out/PROVISIONING_SIGNATURE_CHECKSUM.txt

@@ -251,3 +251,22 @@ details summary { cursor: pointer; }
 @media (min-width: 900px) { .reset-demo { margin-top: auto; } }
 .page > h1, .page-head h1 { margin: 0; }
 .topbar .btn { white-space: nowrap; }
+.env-live { background: var(--ok-bg); color: var(--ok); }
+.stats-3 { grid-template-columns: repeat(3, 1fr) !important; }
+.stat-btn { font: inherit; cursor: pointer; text-align: left; }
+.stat-on { outline: 2px solid var(--primary); }
+.issue-list { display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; }
+.skip-link { position: absolute; left: -9999px; top: 0; z-index: 100; background: var(--primary); color: var(--primary-ink); padding: 8px 12px; border-radius: 0 0 8px 0; }
+.skip-link:focus { left: 0; }
+input[type='file'] { min-height: 0; padding: 6px; }
+.field-inner { display: grid; gap: 4px; }
+.login-apps { width: 100%; max-width: 440px; }
+.login-apps:empty { display: none; }
+@media (min-width: 900px) { .login-apps { grid-column: 1 / -1; max-width: 860px; } }
+/* Top bar must never widen the page on narrow phones or with wide fallback fonts. */
+.topbar { min-width: 0; }
+.shell > * { min-width: 0; }
+.brand { flex-shrink: 0; }
+.userchip { flex: 1 1 auto; justify-content: flex-end; min-width: 0; }
+.userchip-role, .userchip-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.userchip .btn { flex-shrink: 0; }

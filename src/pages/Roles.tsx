@@ -16,12 +16,19 @@ const PERM_LABEL: Partial<Record<Permission, string>> = {
   'audit.read': 'Read audit log',
   'audit.export': 'Export audit log',
   'roles.manage': 'Manage roles',
+  'users.manage': 'Create / disable users, reset MFA',
+  'sessions.manage': 'View / revoke sessions',
+  'employee.manage': 'Manage employees, leavers',
+  'device.retire': 'Retire devices',
+  'apps.manage': 'Manage app catalogue',
+  'settings.manage': 'Organisation settings',
+  'privacy.dsar': 'Data-subject access export',
 };
 
 export function RolesPage() {
   const rt = useRuntime();
   const me = useMe()!;
-  const [users, err] = useQuery((sid) => rt.backend.listUsers(sid));
+  const [users, err] = useQuery((api) => api.listUsers());
   const canManage = useCan('roles.manage');
   const { run, busy } = useAction();
 
@@ -71,7 +78,7 @@ export function RolesPage() {
                   aria-label={`Role for ${u.name}`}
                   value={u.role}
                   disabled={busy}
-                  onChange={(e) => void run(() => rt.backend.setUserRole(rt.sessionId!, u.id, e.target.value as Role), 'Role changed; their sessions were revoked')}
+                  onChange={(e) => void run(() => rt.api.setUserRole(u.id, e.target.value as Role), 'Role changed; their sessions were revoked')}
                 >
                   {ROLES.map((r) => (
                     <option key={r} value={r}>

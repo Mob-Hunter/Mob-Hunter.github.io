@@ -1,8 +1,9 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { cloneElement, createContext, isValidElement, useCallback, useContext, useEffect, useState, useSyncExternalStore, type ReactElement, type ReactNode } from 'react';
 import QRCode from 'qrcode';
 import type { Runtime } from '../runtime';
 import { ApiError } from '../core/backend';
 import type { PublicUser } from '../core/types';
+import type { ConsoleApi } from '../api/console';
 import { can, type Permission } from '../core/rbac';
 
 // ---------------------------------------------------------------- runtime context
@@ -23,58 +24,54 @@ export function useRuntime(): Runtime {
 
 /** Current signed-in admin, or null. */
 export function useMe(): PublicUser | null {
-  const rt = useRuntime();
-  const sid = rt.sessionId;
-  if (!sid) return null;
-  try {
-    return rt.backend.me(sid);
-  } catch {
-    return null;
-  }
+  return useRuntime().me;
 }
 
 export function useCan(perm: Permission): boolean {
   return can(useMe()?.role, perm);
 }
 
-/** Calls a backend read with the current session; returns [data, error]. */
-export function useQuery<T>(fn: (sid: string) => T, deps: unknown[] = []): [T | null, string | null] {
-  const rt = useRuntime();
-  const sid = rt.sessionId;
-  return useMemo(() => {
-    if (!sid) return [null, 'Not signed in'];
-    try {
-      return [fn(sid), null];
-    } catch (e) {
-      return [null, errorText(e)];
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rt.version, sid, ...deps]);
-}
+type QueryState<T> = { data: T | null; error: string | null; loading: boolean };
 
-/** Like useQuery but for async calls. */
-export function useAsyncQuery<T>(fn: (sid: string) => Promise<T>, deps: unknown[], enabled = true): { data: T | null; error: string | null; loading: boolean; reload: () => void } {
+/**
+ * Async query against the console API. Re-runs when deps change and (unless
+ * live=false) whenever the runtime signals a change; keeps showing the previous
+ * data while refreshing. A 401 drops the local session.
+ */
+export function useQuery<T>(fn: (api: ConsoleApi) => Promise<T>, deps: unknown[] = [], opts: { live?: boolean; enabled?: boolean } = {}): [T | null, string | null, { loading: boolean; reload: () => void }] {
   const rt = useRuntime();
-  const sid = rt.sessionId;
-  const [state, setState] = useState<{ data: T | null; error: string | null; loading: boolean }>({ data: null, error: null, loading: enabled });
+  const live = opts.live !== false;
+  const enabled = opts.enabled !== false && !!rt.me;
+  const [state, setState] = useState<QueryState<T>>({ data: null, error: null, loading: enabled });
   const [n, setN] = useState(0);
   useEffect(() => {
-    if (!enabled || !sid) {
+    if (!enabled) {
       setState({ data: null, error: null, loading: false });
       return;
     }
-    let live = true;
+    let alive = true;
     setState((s) => ({ ...s, loading: true }));
-    fn(sid).then(
-      (data) => live && setState({ data, error: null, loading: false }),
-      (e) => live && setState({ data: null, error: errorText(e), loading: false }),
+    fn(rt.api).then(
+      (data) => alive && setState({ data, error: null, loading: false }),
+      (e) => {
+        if (!alive) return;
+        if (e instanceof ApiError && e.status === 401) rt.sessionLost();
+        setState((s) => ({ data: s.data, error: errorText(e), loading: false }));
+      },
     );
     return () => {
-      live = false;
+      alive = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sid, enabled, n, ...deps]);
-  return { ...state, reload: useCallback(() => setN((x) => x + 1), []) };
+  }, [enabled, n, live ? rt.version : 0, ...deps]);
+  const reload = useCallback(() => setN((x) => x + 1), []);
+  return [state.data, state.error, { loading: state.loading, reload }];
+}
+
+/** One-shot query (not refreshed on every change) — e.g. audited location views. */
+export function useAsyncQuery<T>(fn: (api: ConsoleApi) => Promise<T>, deps: unknown[], enabled = true): { data: T | null; error: string | null; loading: boolean; reload: () => void } {
+  const [data, error, meta] = useQuery(fn, deps, { live: false, enabled });
+  return { data, error, ...meta };
 }
 
 /** Async query for public (unauthenticated) endpoints. */
@@ -130,6 +127,7 @@ export function ToastHost({ children }: { children: ReactNode }) {
 /** Wraps an async action with toast feedback; returns the result or undefined on error. */
 export function useAction() {
   const toast = useToast();
+  const rt = useContext(RuntimeCtx);
   const [busy, setBusy] = useState(false);
   const run = useCallback(
     async <T,>(fn: () => Promise<T> | T, ok?: string): Promise<T | undefined> => {
@@ -137,15 +135,18 @@ export function useAction() {
       try {
         const r = await fn();
         if (ok) toast('ok', ok);
+        // Refresh every view right away (server mode has no push from the backend to the browser).
+        rt?.emit();
         return r;
       } catch (e) {
+        if (e instanceof ApiError && e.status === 401) rt?.sessionLost();
         toast('err', errorText(e));
         return undefined;
       } finally {
         setBusy(false);
       }
     },
-    [toast],
+    [toast, rt],
   );
   return { run, busy };
 }
@@ -270,17 +271,35 @@ export function MiniMap({ points }: { points: { lat: number; lng: number; accura
   );
 }
 
+let fieldSeq = 0;
+/** Form field: the hint is outside the <label> (so the accessible name is just the label) and linked via aria-describedby. */
 export function Field({ label, hint, children }: { label: string; hint?: ReactNode; children: ReactNode }) {
+  const [hintId] = useState(() => `hint-${++fieldSeq}`);
+  const child = hint && isValidElement(children) ? cloneElement(children as ReactElement<{ 'aria-describedby'?: string }>, { 'aria-describedby': hintId }) : children;
   return (
-    <label className="field">
-      <span className="field-label">{label}</span>
-      {children}
-      {hint && <span className="field-hint">{hint}</span>}
-    </label>
+    <div className="field">
+      <label className="field-inner">
+        <span className="field-label">{label}</span>
+        {child}
+      </label>
+      {hint && (
+        <span className="field-hint" id={hintId}>
+          {hint}
+        </span>
+      )}
+    </div>
   );
 }
 
 export function download(filename: string, text: string, type = 'application/json') {
+  // Inside the FleetGuard Console APK, save through the native bridge (WebView cannot download blobs).
+  const native = (window as unknown as { FleetGuardNative?: { saveFile(n: string, m: string, b64: string): boolean } }).FleetGuardNative;
+  if (native) {
+    const bytes = new TextEncoder().encode(text);
+    let bin = '';
+    for (const b of bytes) bin += String.fromCharCode(b);
+    if (native.saveFile(filename, type, btoa(bin))) return;
+  }
   const url = URL.createObjectURL(new Blob([text], { type }));
   const a = document.createElement('a');
   a.href = url;

@@ -8,12 +8,12 @@
  * this class that suppresses the managed-device disclosure, the per-fix
  * notification or the persistent Tier 3 notification.
  */
-import type { Backend } from './backend';
-import { deviceRequestMessage, withinWorkingHours } from './backend';
+import { Backend, withinWorkingHours } from './backend';
 import { CommandVerifier, type VerifyFailure } from './commands';
-import { canonicalJson, fingerprint, generateEd25519, randomId, sha256Hex, signEd25519 } from './crypto';
+import { fingerprint, generateEd25519, randomId, signEd25519 } from './crypto';
 import { COLLECTION_NOTICE } from './enrollment';
-import type { DeviceAuth, DeviceCertificate, DevicePolicy, LocationFix, ProvisioningPayload, SignedCommand, Telemetry } from './types';
+import type { DeviceCertificate, DevicePolicy, LocationFix, ProvisioningPayload, SignedCommand, Telemetry } from './types';
+import { LocalDeviceTransport, type DeviceSigner, type DeviceTransport } from '../api/device';
 
 export interface AgentNotification {
   id: string;
@@ -93,7 +93,19 @@ function wire<T>(v: T): T {
 }
 
 export class SimulatedAgent {
-  constructor(public state: AgentState, private readonly backend: Backend, private readonly clock: () => number = () => backend.now()) {}
+  private readonly t: DeviceTransport;
+  private readonly clock: () => number;
+
+  /** Accepts the in-browser backend (demo) or any DeviceTransport (e.g. a real server over HTTP). */
+  constructor(public state: AgentState, target: Backend | DeviceTransport, clock?: () => number) {
+    if (target instanceof Backend) {
+      this.clock = clock ?? (() => target.now());
+      this.t = new LocalDeviceTransport(target, this.clock);
+    } else {
+      this.clock = clock ?? (() => Date.now());
+      this.t = target;
+    }
+  }
 
   private log(text: string) {
     this.state.log.unshift({ at: this.clock(), text });
@@ -112,23 +124,21 @@ export class SimulatedAgent {
     return !!this.state.deviceId && !this.state.wiped;
   }
 
-  private async auth(method: string, path: string, body: unknown): Promise<DeviceAuth> {
-    if (!this.state.keys || !this.state.cert || !this.state.certSig || !this.state.deviceId) throw new Error('Agent is not enrolled');
-    const ts = this.clock();
-    const nonce = randomId('', 12);
-    const bodyHash = await sha256Hex(canonicalJson(body ?? null));
-    const sig = await signEd25519(deviceRequestMessage(method, path, ts, nonce, bodyHash), this.state.keys.secretKey);
-    return { deviceId: this.state.deviceId, cert: this.state.cert, certSig: this.state.certSig, ts, nonce, bodyHash, sig };
+  private signer(): DeviceSigner {
+    const s = this.state;
+    if (!s.keys || !s.cert || !s.certSig || !s.deviceId) throw new Error('Agent is not enrolled');
+    const sk = s.keys.secretKey;
+    return { deviceId: s.deviceId, cert: s.cert, certSig: s.certSig, sign: (m) => signEd25519(m, sk) };
+  }
+
+  private call<T>(method: 'GET' | 'POST', path: string, body: unknown = null): Promise<T> {
+    return this.t.request<T>(method, path, body, this.signer());
   }
 
   /** POST /v1/enroll. The keypair is generated on the device (Android Keystore in the real agent). */
   async enroll(): Promise<void> {
     const keys = await generateEd25519();
-    const res = wire(
-      await this.backend.enroll(
-        wire({ token: this.state.provisioning.token, devicePublicKey: keys.publicKey, platform: 'android' as const, hardware: this.state.hardware }),
-      ),
-    );
+    const res = await this.t.enroll({ token: this.state.provisioning.token, devicePublicKey: keys.publicKey, platform: 'android', hardware: this.state.hardware });
     // Certificate pinning: the server key must match the fingerprint delivered in the QR.
     if ((await fingerprint(res.serverPublicKey)) !== this.state.provisioning.serverPin) throw new PinMismatchError();
     this.state.keys = keys;
@@ -137,6 +147,7 @@ export class SimulatedAgent {
     this.state.certSig = res.certSig;
     this.state.serverPublicKey = res.serverPublicKey;
     this.state.policy = res.policy;
+    this.state.transparencyUrl = res.transparencyUrl;
     this.state.provisioning.token = ''; // one-time token is discarded
     this.notify({
       channel: 'management',
@@ -174,7 +185,7 @@ export class SimulatedAgent {
       ...this.state.hardware,
       ...(this.state.acknowledgedAt && !this.state.ackSent ? { policyAck: { version: COLLECTION_NOTICE.version, at: this.state.acknowledgedAt } } : {}),
     };
-    const res = wire(await this.backend.checkin(await this.auth('POST', '/v1/checkin', body), wire(body)));
+    const res = await this.call<{ state: string; pendingCommands: number; transparencyUrl: string }>('POST', '/v1/checkin', body);
     if ('policyAck' in body) this.state.ackSent = true;
     this.state.transparencyUrl = res.transparencyUrl;
     this.log(`Checked in (state ${res.state}, ${res.pendingCommands} pending)`);
@@ -204,7 +215,7 @@ export class SimulatedAgent {
   /** Wake → pull → verify → execute → post result. Returns per-command outcomes. */
   async poll(): Promise<{ id: string; type: string; outcome: string }[]> {
     if (!this.enrolled) return [];
-    const cmds = wire(await this.backend.pendingCommands(await this.auth('GET', '/v1/commands/pending', null)));
+    const cmds = await this.call<SignedCommand[]>('GET', '/v1/commands/pending');
     const outcomes: { id: string; type: string; outcome: string }[] = [];
     for (const env of cmds) {
       const v = await this.verify(env);
@@ -226,7 +237,7 @@ export class SimulatedAgent {
   }
 
   private async postResult(id: string, body: { status: 'succeeded' | 'failed' | 'rejected'; detail?: string; location?: LocationFix }) {
-    await this.backend.commandResult(await this.auth('POST', `/v1/commands/${id}/result`, body), id, wire(body));
+    await this.call('POST', `/v1/commands/${id}/result`, body);
   }
 
   private transparencyLink(): string | undefined {
@@ -289,7 +300,7 @@ export class SimulatedAgent {
         this.state.locked = true;
         return 'succeeded';
       case 'SYNC_POLICY': {
-        const res = wire(await this.backend.devicePolicy(await this.auth('GET', '/v1/policy', null)));
+        const res = await this.call<{ policy: DevicePolicy; transparencyUrl: string }>('GET', '/v1/policy');
         this.state.policy = res.policy;
         this.state.transparencyUrl = res.transparencyUrl;
         await this.postResult(p.id, { status: 'succeeded', detail: `Policy v${res.policy.version} applied` });
@@ -345,7 +356,7 @@ export class SimulatedAgent {
     }
     if (fixes.length) {
       const body = { fixes };
-      const r = await this.backend.locationBatch(await this.auth('POST', '/v1/location/batch', body), wire(body));
+      const r = await this.call<{ accepted: number; rejected: number }>('POST', '/v1/location/batch', body);
       this.log(`Location batch: ${r.accepted} accepted, ${r.rejected} rejected`);
     }
   }

@@ -3,11 +3,10 @@ import { Link } from 'react-router-dom';
 import { Badge, Card, Empty, ErrorBox, Field, MiniMap, fmtTime, useAction, useAsyncQuery, useCan, useRuntime } from '../ui/kit';
 
 export function LocationsPage() {
-  const rt = useRuntime();
   const canRead = useCan('location.read');
   const [ticket, setTicket] = useState('');
   const [submitted, setSubmitted] = useState<string | null>(null);
-  const q = useAsyncQuery((sid) => rt.backend.listLocationResults(sid, { ticket: submitted! }), [submitted], canRead && !!submitted);
+  const q = useAsyncQuery((api) => api.listLocationResults({ ticket: submitted! }), [submitted], canRead && !!submitted);
 
   if (!canRead) return <ErrorBox>Location data is only available to the Location Operator role.</ErrorBox>;
 
@@ -93,7 +92,7 @@ function RetentionCard() {
   if (!canPurge) return null;
   return (
     <Card title="Retention">
-      <button className="btn" disabled={busy} onClick={() => void run(async () => `${await rt.backend.purgeNow(rt.sessionId!)}`, 'Retention job ran')}>
+      <button className="btn" disabled={busy} onClick={() => void run(async () => `${await rt.api.purgeNow()}`, 'Retention job ran')}>
         Run 30-day purge now
       </button>
     </Card>

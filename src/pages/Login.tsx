@@ -4,6 +4,7 @@ import { useMe, useRuntime, useNow, errorText, ErrorBox } from '../ui/kit';
 import { totp } from '../core/totp';
 import { ROLE_LABEL } from '../core/rbac';
 import { DEMO_PASSWORD } from '../runtime';
+import { MobileAppsCard } from './Settings';
 
 function LiveCode({ secret }: { secret: string }) {
   const now = useNow(1000);
@@ -31,28 +32,14 @@ export function LoginPage() {
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  if (rt.mode === 'server' && rt.health.needsBootstrap) return <Navigate to="/setup" replace />;
   if (me) return <Navigate to={from} replace />;
 
-  const submitPassword = async (e: FormEvent) => {
-    e.preventDefault();
+  const attempt = async (fn: () => Promise<void>) => {
     setBusy(true);
     setErr(null);
     try {
-      setChallenge((await rt.backend.login(email, password)).challengeId);
-    } catch (x) {
-      setErr(errorText(x));
-    } finally {
-      setBusy(false);
-    }
-  };
-  const submitCode = async (e: FormEvent) => {
-    e.preventDefault();
-    setBusy(true);
-    setErr(null);
-    try {
-      const { sessionId } = await rt.backend.verifyMfa(challenge!, code);
-      rt.sessionId = sessionId;
-      nav(from, { replace: true });
+      await fn();
     } catch (x) {
       setErr(errorText(x));
       if ((x as { code?: string }).code === 'mfa_expired') setChallenge(null);
@@ -60,6 +47,22 @@ export function LoginPage() {
       setBusy(false);
     }
   };
+  const submitPassword = (e: FormEvent) => {
+    e.preventDefault();
+    void attempt(async () => setChallenge((await rt.api.login(email, password)).challengeId));
+  };
+  const submitCode = (e: FormEvent) => {
+    e.preventDefault();
+    void attempt(async () => {
+      await rt.signedIn(await rt.api.verifyMfa(challenge!, code));
+      nav(from, { replace: true });
+    });
+  };
+  const sso = () =>
+    void attempt(async () => {
+      await rt.signedIn(await rt.api.sso());
+      nav(from, { replace: true });
+    });
   const fill = (acc: { email: string }) => {
     setEmail(acc.email);
     setPassword(DEMO_PASSWORD);
@@ -78,6 +81,14 @@ export function LoginPage() {
         </div>
         <p className="muted">Company-owned device management console</p>
         {err && <ErrorBox>{err}</ErrorBox>}
+        {rt.health.sso && (
+          <>
+            <button className="btn btn-primary" disabled={busy} onClick={sso}>
+              Sign in with company SSO
+            </button>
+            <p className="tiny muted center">or use a console account</p>
+          </>
+        )}
         {!challenge ? (
           <form onSubmit={submitPassword} className="stack">
             <label className="field">
@@ -88,7 +99,7 @@ export function LoginPage() {
               <span className="field-label">Password</span>
               <input type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} />
             </label>
-            <button className="btn btn-primary" disabled={busy}>
+            <button className={`btn ${rt.health.sso ? '' : 'btn-primary'}`} disabled={busy}>
               {busy ? 'Checking…' : 'Continue'}
             </button>
           </form>
@@ -107,30 +118,36 @@ export function LoginPage() {
           </form>
         )}
         <p className="tiny muted">
-          Production uses OIDC SSO with MFA from your identity provider. <Link to="/privacy">Privacy &amp; governance</Link>
+          {rt.mode === 'server' ? `Connected to FleetGuard server v${rt.health.version}. ` : 'Demo mode — everything runs in this browser. '}
+          <Link to="/privacy">Privacy &amp; governance</Link>
         </p>
       </div>
 
-      <div className="card demo-card">
-        <h2>Demo accounts</h2>
-        <p className="muted small">
-          This GitHub Pages build runs a complete reference backend <strong>inside your browser</strong>. Data never leaves this device. Pick a role, then type
-          the live code from the demo authenticator.
-        </p>
-        <ul className="demo-list">
-          {rt.demoAccounts.map((a) => (
-            <li key={a.email}>
-              <button className="linkish" onClick={() => fill(a)}>
-                <strong>{ROLE_LABEL[a.role]}</strong>
-                <span className="muted small">{a.email}</span>
-              </button>
-              <LiveCode secret={a.totpSecret} />
-            </li>
-          ))}
-        </ul>
-        <p className="tiny muted">
-          Password for all demo accounts: <code>{DEMO_PASSWORD}</code>
-        </p>
+      {rt.mode === 'demo' && (
+        <div className="card demo-card">
+          <h2>Demo accounts</h2>
+          <p className="muted small">
+            This build runs a complete reference backend <strong>inside your browser</strong>. Data never leaves this device. Pick a role, then type the live code
+            from the demo authenticator.
+          </p>
+          <ul className="demo-list">
+            {rt.demoAccounts.map((a) => (
+              <li key={a.email}>
+                <button className="linkish" onClick={() => fill(a)}>
+                  <strong>{ROLE_LABEL[a.role]}</strong>
+                  <span className="muted small">{a.email}</span>
+                </button>
+                <LiveCode secret={a.totpSecret} />
+              </li>
+            ))}
+          </ul>
+          <p className="tiny muted">
+            Password for all demo accounts: <code>{DEMO_PASSWORD}</code>
+          </p>
+        </div>
+      )}
+      <div className="login-apps">
+        <MobileAppsCard />
       </div>
     </div>
   );

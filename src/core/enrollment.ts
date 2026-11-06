@@ -1,8 +1,8 @@
 import type { DevicePolicy, ProvisioningPayload } from './types';
 
 export const ENROLLMENT_TTL_MS = 15 * 60 * 1000;
-export const AGENT_PACKAGE = 'com.company.deviceagent';
-export const AGENT_COMPONENT = `${AGENT_PACKAGE}/.AgentDeviceAdminReceiver`;
+export const AGENT_PACKAGE = 'com.fleetguard.agent';
+export const AGENT_COMPONENT = `${AGENT_PACKAGE}/.AgentAdminReceiver`;
 export const AGENT_VERSION = '1.0.0';
 /** SHA-256 of the APK signing certificate, URL-safe base64 as Android expects. Replace at release time. */
 export const APK_SIGNATURE_CHECKSUM = 'REPLACE_WITH_RELEASE_SIGNING_CERT_SHA256_URLSAFE_B64';
@@ -12,11 +12,13 @@ export function buildProvisioningPayload(opts: {
   token: string;
   serverPin: string;
   wifi?: { ssid: string; security: 'WPA' | 'WEP' | 'NONE' };
+  apkVersion?: string;
+  signatureChecksum?: string;
 }): ProvisioningPayload {
   const payload: ProvisioningPayload = {
     'android.app.extra.PROVISIONING_DEVICE_ADMIN_COMPONENT_NAME': AGENT_COMPONENT,
-    'android.app.extra.PROVISIONING_DEVICE_ADMIN_PACKAGE_DOWNLOAD_LOCATION': `${opts.apiBaseUrl}/apk/${AGENT_VERSION}`,
-    'android.app.extra.PROVISIONING_DEVICE_ADMIN_SIGNATURE_CHECKSUM': APK_SIGNATURE_CHECKSUM,
+    'android.app.extra.PROVISIONING_DEVICE_ADMIN_PACKAGE_DOWNLOAD_LOCATION': `${opts.apiBaseUrl}/apk/${opts.apkVersion ?? AGENT_VERSION}`,
+    'android.app.extra.PROVISIONING_DEVICE_ADMIN_SIGNATURE_CHECKSUM': opts.signatureChecksum ?? APK_SIGNATURE_CHECKSUM,
     'android.app.extra.PROVISIONING_LEAVE_ALL_SYSTEM_APPS_ENABLED': true,
     'android.app.extra.PROVISIONING_SKIP_ENCRYPTION': false,
     'android.app.extra.PROVISIONING_ADMIN_EXTRAS_BUNDLE': {

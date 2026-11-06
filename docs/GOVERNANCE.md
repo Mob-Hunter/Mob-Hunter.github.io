@@ -39,14 +39,28 @@ Reference law: Sri Lanka **Personal Data Protection Act No. 9 of 2022** (PDPA). 
 **Overcome it.** Purge location automatically after 30 days and keep audit records for 1 year. Set up a DSAR (access request) process with the DPO.
 **Built in:** location is stored encrypted with AES-256-GCM and purged after 30 days. The employee transparency page shows every request and every stored fix for their device.
 
-### 7. Hosting on GitHub Pages (Medium)
-**Risk.** GitHub Pages is static, public hosting. It can't keep secrets, terminate mutual TLS, send pushes or run scheduled jobs. A backend that runs in the browser isn't a trust boundary, because the visitor controls it.
-**Overcome it.** Use the Pages build for the UI, demos, training and acceptance testing, with **no real data**. Run production on Cloudflare Workers and Durable Objects with keys in Secrets/KMS, and put the console behind **Cloudflare Access** (SSO + MFA), not a public `github.io` URL.
+### 7. Agent APK signing key = control of every phone (High)
+**Risk.** Whoever holds the agent's signing key can ship an "update" that every enrolled device-owner phone will accept.
+**Overcome it.** Generate the release keystore offline. Store it in a hardware security module or an offline vault with two named custodians, and give CI access only through encrypted secrets (`FG_KEYSTORE_*`). Never use the debug-signed evaluation APKs on staff phones. Record the key's fingerprint in the DPIA.
+**Built in:** release signing reads only from CI secrets. The provisioning QR pins the signing-certificate checksum, so Android refuses an agent signed with any other key. CI warns loudly when it falls back to debug signing.
 
-### 8. Wi-Fi credentials in the QR (Low)
+### 8. Admin console on a phone (Medium)
+**Risk.** Someone who finds an unlocked admin phone could act as that administrator.
+**Overcome it.** Use SSO with MFA and short sessions. Enrol the admins' own phones in FleetGuard with a screen lock enforced. Revoke sessions from *Users & access* when a phone is lost.
+**Built in:** the console APK is locked to one origin, has backup disabled and allows HTTPS only. Sessions are HttpOnly cookies that expire after 30 minutes idle and 12 hours in total, and can be revoked centrally.
+
+### 9. SIEM forwarding and DSAR exports carry personal data (Medium)
+**Overcome it.** Forward the audit log only to a SIEM covered by your DPA and retention policy. Have DSAR exports go through the DPO.
+**Built in:** webhooks must be HTTPS and are HMAC-signed. Only the Security role can produce a DSAR export, it needs a ticket, and every export is audited.
+
+### 10. Hosting on GitHub Pages (Medium)
+**Risk.** GitHub Pages is static, public hosting. It can't keep secrets, terminate mutual TLS, send pushes or run scheduled jobs. A backend that runs in the browser isn't a trust boundary, because the visitor controls it.
+**Overcome it.** Use the Pages build only for demos, training and acceptance testing, with **no real data**. Production runs on the included Cloudflare Worker (`worker/`, see [DEPLOYMENT.md](DEPLOYMENT.md)), with keys in Workers Secrets and the console behind **Cloudflare Access** (SSO + MFA).
+
+### 11. Wi-Fi credentials in the QR (Low)
 A photo of the QR would leak the password. Use an open or captive setup SSID instead. **Built in:** only the SSID can be added.
 
-### 9. iOS location expectations (Low)
+### 12. iOS location expectations (Low)
 Supervised iPhones expose location only through Managed Lost Mode. Never claim background tracking for them.
 
 ## Go-live gate (before any real employee device)
@@ -54,6 +68,7 @@ Supervised iPhones expose location only through Managed Lost Mode. Never claim b
 - [ ] Device-use policy published, staff consulted, acknowledgements collected
 - [ ] DPAs and transfer safeguards for Cloudflare, FCM and APNs
 - [ ] Backend on Cloudflare with keys in Secrets/KMS, console behind Cloudflare Access
+- [ ] Agent release keystore generated offline, custodians named, `APK_SIGNATURE_CHECKSUM` set; no debug-signed APK on staff phones
 - [ ] External pen test with zero open high/critical findings
 - [ ] Runbooks rehearsed: lost/stolen, leaver, non-compliant, suspected misuse
 - [ ] Monthly Security review of the location-access audit, and a DSAR process

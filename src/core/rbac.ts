@@ -38,6 +38,13 @@ export type Permission =
   | 'roles.read'
   | 'roles.manage'
   | 'command.approve'
+  | 'users.manage'
+  | 'sessions.manage'
+  | 'employee.manage'
+  | 'device.retire'
+  | 'apps.manage'
+  | 'settings.manage'
+  | 'privacy.dsar'
   | `command.${CommandType}`;
 
 const ALL_READ: Role[] = [...ROLES];
@@ -56,6 +63,14 @@ export const PERMISSIONS: Record<Permission, readonly Role[]> = {
   'roles.read': ALL_READ,
   'roles.manage': ['SUPER_ADMIN'],
   'command.approve': ['SUPER_ADMIN', 'DEVICE_ADMIN', 'SECURITY'],
+  'users.manage': ['SUPER_ADMIN'],
+  'sessions.manage': ['SUPER_ADMIN', 'SECURITY'],
+  'employee.manage': ['SUPER_ADMIN', 'DEVICE_ADMIN'],
+  'device.retire': ['SUPER_ADMIN', 'DEVICE_ADMIN'],
+  'apps.manage': ['SUPER_ADMIN', 'DEVICE_ADMIN'],
+  'settings.manage': ['SUPER_ADMIN'],
+  // Data-subject access requests are handled by Security (acting for the DPO), never by the Location Operator.
+  'privacy.dsar': ['SECURITY'],
   // LOCATE and Lost Mode are allowed only for Location Operator (Phase 1 spec).
   'command.LOCATE': ['LOCATION_OPERATOR'],
   'command.LOST_MODE_ON': ['LOCATION_OPERATOR'],

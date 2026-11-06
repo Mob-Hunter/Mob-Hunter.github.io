@@ -1,67 +1,65 @@
-# FleetGuard — company-owned device management console
+# FleetGuard — company-owned device management
 
-**Live:** https://mob-hunter.github.io/ (after the Pages workflow runs on `main`)
+FleetGuard manages company-owned Android phones (and, later, supervised iPhones) as the build specification describes. Transparency and least privilege are built into the code rather than left to configuration.
 
-FleetGuard is the central dashboard, API and relay from Phases 0–2 of the build specification, written so the whole service runs on GitHub Pages. It works on phones (it's an installable PWA) and on desktop. Because GitHub Pages only hosts static files, the **reference backend runs inside the browser** and implements the same API contract the Cloudflare Worker will serve in production. Everything works end to end: sign-in, roles, enrolment, the QR code, rename, signed commands, the relay, the audit chain and location retention. Simulated Android devices stand in for real phones.
-
-> ⚠️ **Demo, not production.** All data lives in the visitor's own browser storage and is never sent anywhere. Don't enter real employee data. To run on real devices, deploy the same contract on Cloudflare (see [Production path](#production-path)) and read [docs/GOVERNANCE.md](docs/GOVERNANCE.md).
-
-## What's implemented
-
-| Spec item | Where | Notes |
+| Part | What it is | Where |
 |---|---|---|
-| Admin auth (password + MFA), server-side sessions | `src/core/backend.ts` `login` / `verifyMfa` | PBKDF2-SHA256 (210k), RFC 6238 TOTP, lockout after 5 failures, 30-min idle / 12-h absolute sessions |
-| Six roles enforced in the backend | `src/core/rbac.ts` | LOCATE and Lost Mode only for Location Operator; Super Admin cannot see location; nobody can change their own role |
-| Device registry, rename and assign (`PATCH /admin/devices/{id}`) | `updateDevice` | New devices show as **Unnamed device**; every change is audited with before and after values |
-| Enrolment token (15-min TTL, single use), install page `/e/{token}`, QR | `createEnrollment`, `installPage`, `pages/Enrol.tsx` | The QR holds the Android device-owner provisioning JSON with an `ADMIN_EXTRAS_BUNDLE` (server URL, token, server-key pin). The sideload APK link is labelled *testing only*. Tokens are stored only as hashes |
-| `POST /v1/enroll`: device ID plus client certificate | `enroll` | The key pair is generated on the device. The CA signs an Ed25519 certificate, and the agent checks the server key against the pin from the QR |
-| Device authentication (mutual TLS equivalent) | `authenticateDevice` | Each request needs the CA-issued certificate and a signature over method, path, timestamp, nonce and body hash. A 5-minute window and nonce tracking block replays. Wiping a device revokes it |
-| Durable-Object relay with push wake | `src/core/relay.ts` | Per-device queue with serialised processing. The FCM/APNs wake is a stub behind a `PushProvider` interface and carries no command data |
-| Signed commands (Ed25519, nonce, 10-min expiry, run once) | `src/core/commands.ts` | The agent rejects tampered, expired, replayed, wrong-device and future-dated commands, and commands with too long a lifetime |
-| Append-only, hash-chained audit with a verify step and SIEM export | `src/core/audit.ts` | `hash = SHA-256(prev_hash + canonical(payload))`. Denied access is logged too |
-| Location encrypted at rest, 30-day purge | `storeLocation`, `runRetention` | AES-256-GCM with the AAD bound to the record and device |
-| Device policy | `updatePolicy` | Tier 3 location is off by default, needs a written justification, runs no more often than every 15 min and only in working hours (policy time zone). Security and network logging are hard-wired off |
-| Transparency (non-negotiables 1–3) | `src/core/agent.ts`, `pages/Transparency.tsx` | Nothing can collect location until the notice is acknowledged. Every fix triggers a notification, and Tier 3 shows a persistent low-importance one. **The server discards any location that arrives without proof the notification was shown.** Employees get a self-service page listing every request |
-| Four-eyes wipe | `issueCommand` / `approveCommand` | Needs a ticket, a reason, a typed confirmation and a different approver |
-| Device simulator (Phase 1 task 6) | `pages/Simulator.tsx` | Phone mock-ups showing the notification shade, the Lost Mode screen and the notice screen, plus buttons that demonstrate tamper and replay rejection |
+| **Console** | Responsive React admin console. The same build runs as a static demo, on a real server, or inside the console APK | `src/` |
+| **Server** | Cloudflare Worker with Hono. A Durable Object holds the tenant, using SQLite storage and the per-device relay queues. Optional FCM push, Cloudflare Access SSO and SIEM forwarding | `worker/`, `wrangler.toml` |
+| **Device agent APK** | Kotlin device-owner agent (minSdk 30), with no launcher icon. It enrols with the provisioning QR, uses a P-256 key in the Android Keystore, verifies signed commands and posts the mandatory notifications | `android/agent` |
+| **Console APK** | The console as an Android app. It runs as an offline demo, or connects to your server | `android/console` |
 
-Not in this build: the Kotlin agent (Phase 3), iOS / NanoMDM (Phase 4) and the pen test (Phase 5). These need real devices, Apple and Google accounts, and a server.
+**Demo:** https://mob-hunter.github.io/. GitHub Pages runs the whole system in your browser with simulated phones. The Android APKs are published under *Settings → Android apps* once the Pages workflow has run.
 
-## Try it
+> ⚠️ **GitHub Pages is a demo and evaluation host, not a production backend.** A static site can't keep secrets, terminate TLS for devices or send push messages. For real devices, deploy the server (see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)) and complete the [governance gate](docs/GOVERNANCE.md#go-live-gate).
 
-1. Open the site and pick a demo account. Type the live 6-digit code shown next to it (a demo authenticator).
-2. **Device Admin** → *Add devices* → *Mint token + QR* → *Simulate a phone scanning this QR* → *Devices* → rename the **Unnamed device**.
-3. *Device simulator* → tap **I understand** on the phone's notice screen.
-4. Sign in as **Location Operator** → open the device → `LOCATE` with ticket `INC-1234` and a reason. The phone shows a notification, the result comes back through the relay, and you can view it on the map against a ticket.
-5. Sign in as **Helpdesk**: LOCATE isn't offered, and the API refuses it anyway. **Auditor** → *Audit log* → *Verify hash chain*.
+## Modes
+
+The console works out how it is running at start-up:
+
+- **Server ("Live").** Served by the Worker, so `/api/health` answers. Every call goes to the real backend over HTTPS. The session lives in an HttpOnly, Secure, SameSite=Strict cookie, and requests also carry a CSRF header.
+- **Demo.** Served statically (GitHub Pages, or the console APK offline). The reference backend runs in the browser with seeded demo accounts and simulated phones. Nothing leaves the device.
+
+Both modes run the same backend code (`src/core/backend.ts`), so every rule is tested once and enforced identically.
+
+## Features
+
+**Security and the non-negotiables**
+
+- Admin sign-in uses a password (PBKDF2) plus TOTP MFA, with lockout and rate limits. Cloudflare Access SSO is optional. Sessions expire after 30 minutes idle and 12 hours in total.
+- Six roles are enforced on the server for every call. Only the Location Operator can locate a device or read location data, and Super Admin can't. A wipe needs a different second approver. Nobody can change their own role, and a role change revokes that user's sessions.
+- Commands are signed with Ed25519 and carry a nonce and a 10-minute expiry. They run once, and the agent rejects tampered, expired, replayed, wrong-device or overly long-lived commands.
+- Device identity uses a P-256 key in the Android Keystore (StrongBox where available) and a certificate from FleetGuard's own CA. Every request is signed over method, path, timestamp, nonce and body hash. The agent pins the server's signing key from the QR.
+- The audit log is append-only and hash-chained, covering every action and every denied attempt. It has a verify button, a SIEM export, and optional HMAC-signed webhook forwarding.
+- Location data is encrypted with AES-256-GCM and purged after 30 days. Viewing it requires a ticket and is itself audited. **The server discards any location that arrives without proof that the phone showed the notification.**
+- Nothing is collected until the employee has acknowledged the notice. Employees have a self-service transparency page. Continuous tracking is off by default, needs a written justification, and runs only during working hours with a persistent notification.
+
+**Operations**
+
+- Enrolment: 15-minute single-use tokens, the device-owner QR, an install page, and a clearly labelled sideload link. New phones appear as "Unnamed device" and can be renamed or assigned inline.
+- Commands: LOCATE, Lost Mode on and off, LOCK, WIPE (four-eyes), SYNC_POLICY, INSTALL_APP (from the approved catalogue, with SHA-256 checked on the device), and REBOOT.
+- Compliance view: stale check-ins, patch age, Play Integrity, battery, storage, acknowledgement and assignment. Inventory exports to CSV, with spreadsheet formula injection neutralised.
+- Employees: add, import from HR CSV, leaver offboarding, and DSAR export (Security only, ticketed and audited).
+- Users and access: invite users with an authenticator QR, disable accounts, reset MFA, and list or revoke sessions.
+- Settings: organisation name and DPO contact (both shown in the employee notice), SIEM webhook, approved app catalogue, and change password.
+- Device retirement revokes the device's certificate immediately.
 
 ## Develop
 
 ```bash
 npm ci
-npm run dev          # http://localhost:5173
-npm test             # 61 unit/integration tests (Vitest, real crypto)
-npm run build
-npm run test:e2e     # drives the production build in Chromium at phone size (18 checks)
-npm run check        # all of the above
+npm run dev              # console in demo mode (http://localhost:5173)
+npm run dev:server       # console + real Worker locally in workerd (http://127.0.0.1:8787)
+npm test                 # unit, integration and HTTP API tests
+npm run test:e2e         # browser E2E against the static build (demo mode)
+npm run test:e2e:server  # browser E2E against the Worker (server mode)
+npm run android          # agent unit tests + both release APKs (needs the Android SDK)
 ```
 
-Stack: React 19, TypeScript, Vite, React Router (hash routing for Pages), `@noble/ed25519`, `@noble/hashes` and WebCrypto, and `qrcode`. There are no runtime network calls and no third-party scripts, and a strict CSP is injected at build time.
+## Deploy
 
-## Deploy (GitHub Pages)
+- **Demo site:** merge to `main`. `pages.yml` tests everything, builds the APKs and publishes the site to GitHub Pages, with the APKs under `/downloads/`. You need to set **Settings → Pages → Source: GitHub Actions** once.
+- **Production server:** follow [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md). In short: `wrangler secret put BOOTSTRAP_TOKEN`, `npm run deploy`, open the URL and create the first Super Admin.
+- **APKs:** pushing a `v*` tag runs `release.yml`, which attaches signed APKs and checksums to a GitHub Release. See [android/README.md](android/README.md) for signing and enrolment.
 
-1. Merge to `main`.
-2. Repository **Settings → Pages → Build and deployment → Source: GitHub Actions** (one-time).
-3. `.github/workflows/pages.yml` runs the type-check, unit tests, build and E2E, then deploys `dist/`.
-
-`ci.yml` runs on every PR: `npm audit`, the type-check, the tests, the build, E2E and CodeQL (SAST).
-
-## Production path
-
-The UI only calls the `Backend` methods, which map one to one onto the routes in spec §3.3. To go live:
-
-1. Put the same contract in a Hono Worker (`/api`), using D1 for tables, KV for sessions, a `DeviceRelay` Durable Object per device, Queues plus a cron for the purge, and R2 for the APK.
-2. Move the keys to Workers Secrets/KMS, replace the request-signature check with real mTLS (Cloudflare API Shield client certificates), and replace TOTP with OIDC SSO through Cloudflare Access.
-3. Swap the in-browser `Backend` for an HTTP client. The pages stay as they are.
-
-See [docs/SECURITY.md](docs/SECURITY.md) for the threat model and [docs/GOVERNANCE.md](docs/GOVERNANCE.md) for the privacy and governance review.
+Docs: [Deployment](docs/DEPLOYMENT.md) · [Android](android/README.md) · [Security model](docs/SECURITY.md) · [Governance review](docs/GOVERNANCE.md)

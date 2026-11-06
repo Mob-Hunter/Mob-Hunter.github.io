@@ -13,13 +13,13 @@ export function EnrolPage() {
   const [note, setNote] = useState('');
   const [ssid, setSsid] = useState('');
   const [minted, setMinted] = useState<{ token: string; expiresAt: number; provisioning: ProvisioningPayload; sideloadApkUrl: string } | null>(null);
-  const [tokens] = useQuery((sid) => rt.backend.listEnrollments(sid));
-  const [unnamed] = useQuery((sid) => rt.backend.listDevices(sid, { unnamedOnly: true }));
+  const [tokens] = useQuery((api) => api.listEnrollments());
+  const [unnamed] = useQuery((api) => api.listDevices({ unnamedOnly: true }));
   const { run, busy } = useAction();
 
   const mint = () =>
     run(async () => {
-      const r = await rt.backend.createEnrollment(rt.sessionId!, { note: note || undefined, wifiSsid: ssid || undefined });
+      const r = await rt.api.createEnrollment({ note: note || undefined, wifiSsid: ssid || undefined });
       setMinted(r);
       return r;
     }, 'Enrolment token minted (valid 15 minutes, single use)');

@@ -1,14 +1,13 @@
 import { Link } from 'react-router-dom';
-import { Badge, Card, Empty, fmtAgo, useMe, useQuery, useRuntime } from '../ui/kit';
+import { Badge, Card, Empty, fmtAgo, useMe, useQuery } from '../ui/kit';
 import { ROLE_LABEL, can } from '../core/rbac';
 
 export function OverviewPage() {
-  const rt = useRuntime();
   const me = useMe()!;
-  const [stats] = useQuery((sid) => rt.backend.stats(sid));
-  const [wakes] = useQuery((sid) => rt.backend.pushLog(sid).slice(0, 6));
-  const [cmds] = useQuery((sid) => rt.backend.listCommands(sid).slice(0, 6));
-  const [devices] = useQuery((sid) => rt.backend.listDevices(sid));
+  const [stats] = useQuery((api) => api.stats());
+  const [wakes] = useQuery(async (api) => (await api.pushLog()).slice(0, 6));
+  const [cmds] = useQuery(async (api) => (await api.listCommands()).slice(0, 6));
+  const [devices] = useQuery((api) => api.listDevices());
   const name = (id: string) => devices?.find((d) => d.id === id)?.displayName ?? id;
 
   return (

@@ -1,0 +1,10 @@
+<resources>
+    <style name="Theme.FleetGuard" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:colorPrimary">#0F5C8C</item>
+        <item name="android:colorAccent">#0EA5E9</item>
+        <item name="android:windowBackground">#FFFFFF</item>
+    </style>
+    <style name="Theme.FleetGuard.Lost" parent="android:Theme.Material.NoActionBar.Fullscreen">
+        <item name="android:windowBackground">#7F1D1D</item>
+    </style>
+</resources>

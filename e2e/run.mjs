@@ -31,7 +31,16 @@ const context = await browser.newContext({ viewport: { width: 390, height: 844 }
 const page = await context.newPage();
 const errors = [];
 page.on('pageerror', (e) => errors.push(e.message));
-page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
+// The console probes ./api/health (server detection) and ./downloads/*.apk (download card);
+// on a static host without them those 404s are expected. Any other 404 still fails the run.
+let probe404 = 0;
+let other404 = [];
+page.on('response', (r) => {
+  if (r.status() !== 404) return;
+  if (/\/api\/health$|\/downloads\/[\w.-]+\.apk$/.test(r.url())) probe404++;
+  else other404.push(r.url());
+});
+page.on('console', (m) => m.type() === 'error' && !(probe404 > 0 && /status of 404/.test(m.text())) && errors.push(m.text()));
 page.on('dialog', (d) => d.accept());
 
 let step = 0;
@@ -163,6 +172,50 @@ try {
   assert.ok((await page.locator('table.audit tbody tr').count()) > 10);
   ok('audit hash chain verifies');
 
+  await signOut();
+
+  // Enterprise features: users, employees, compliance, settings (Super Admin)
+  await signIn('Super Admin');
+  await page.getByRole('link', { name: /Users & access/ }).click();
+  await page.getByRole('heading', { name: 'Users & access', exact: true }).waitFor();
+  await page.getByLabel('Name', { exact: true }).fill('Priya Auditor');
+  await page.getByLabel('Work e-mail').fill('priya@example.com');
+  await page.getByLabel('Role').selectOption('AUDITOR');
+  await page.getByLabel('Temporary password').fill('Temp-Passw0rd-123');
+  await page.getByRole('button', { name: 'Create' }).click();
+  await page.getByAltText('Authenticator enrolment QR code').waitFor();
+  assert.match(await page.getByLabel('Or enter this key manually').inputValue(), /^[A-Z2-7]{32}$/);
+  await page.getByText('Active sessions').waitFor();
+  ok('Super Admin invited a user and got an authenticator QR; sessions listed');
+
+  await page.getByRole('link', { name: /Employees/ }).click();
+  await page.getByRole('heading', { name: 'Employees', exact: true }).waitFor();
+  await page.getByLabel('Name', { exact: true }).fill('Tharindu Bandara');
+  await page.getByLabel('Work e-mail').fill('tharindu@example.com');
+  await page.getByLabel('Department').fill('Field Ops');
+  await page.getByRole('button', { name: 'Add', exact: true }).click();
+  await page.getByText('Tharindu Bandara').waitFor();
+  await page.getByLabel('CSV file').setInputFiles({ name: 'hr.csv', mimeType: 'text/csv', buffer: Buffer.from('name,email,department\nAmali Dias,amali@example.com,Sales\nBad Row,not-an-email,X\n') });
+  await page.getByText(/1 created, 0 updated, 1 rejected/).waitFor();
+  ok('employee added and HR CSV imported (bad row rejected)');
+
+  await page.getByRole('link', { name: /Compliance/ }).click();
+  await page.getByRole('heading', { name: 'Compliance', exact: true }).waitFor();
+  await page.getByText('Non-compliant').waitFor();
+  const dl = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Export inventory (CSV)' }).click();
+  const file = await dl;
+  assert.match(file.suggestedFilename(), /^device-inventory-.*\.csv$/);
+  ok('compliance view rendered and inventory CSV exported');
+
+  await page.getByRole('link', { name: /Settings/ }).click();
+  await page.getByRole('heading', { name: 'Settings', exact: true }).waitFor();
+  await page.getByLabel('Data Protection Officer contact').fill('privacy@example.com');
+  await page.getByRole('button', { name: 'Save' }).click();
+  await page.locator('.toast-ok', { hasText: 'Settings saved' }).waitFor();
+  await page.getByText('Timesheets', { exact: true }).waitFor();
+  ok('organisation settings saved; app catalogue shown');
+
   // No horizontal scroll at phone width
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   assert.ok(overflow <= 1, `horizontal overflow ${overflow}px`);
@@ -173,6 +226,7 @@ try {
   assert.match(csp, /script-src 'self'/);
   ok('Content-Security-Policy is applied');
 
+  assert.deepEqual(other404, [], `unexpected 404s: ${other404.join(', ')}`);
   assert.deepEqual(errors, [], `browser errors: ${errors.join('\n')}`);
   ok('no console errors');
   console.log(`\nE2E passed (${step} checks)`);

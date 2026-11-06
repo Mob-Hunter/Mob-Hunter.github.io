@@ -17,6 +17,7 @@ export function SimulatorPage() {
         )}
       </div>
       <div className="callout">
+        {rt.mode === 'server' && <strong>Test devices on your live server. </strong>}
         Each phone below runs the same protocol as the Android agent: Ed25519 key generated on the device, certificate pinning, signed requests, push wake →
         pull, signature/expiry/replay checks, and the mandatory transparency notifications. Nothing here can turn those notifications off.
       </div>

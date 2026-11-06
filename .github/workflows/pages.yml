@@ -29,6 +29,14 @@ jobs:
       - run: npm run build
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
+      - uses: ./.github/actions/android-build
+        with:
+          keystore-base64: ${{ secrets.FG_KEYSTORE_BASE64 }}
+          keystore-password: ${{ secrets.FG_KEYSTORE_PASSWORD }}
+          key-alias: ${{ secrets.FG_KEY_ALIAS }}
+          key-password: ${{ secrets.FG_KEY_PASSWORD }}
+      - name: Publish APKs with the site
+        run: mkdir -p dist/downloads && cp apk-out/* dist/downloads/
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
