@@ -1,9 +1,9 @@
-# FleetGuard Android apps
+# Mob Hunter Android apps
 
 | Module | Package | What it is |
 |---|---|---|
-| `agent` | `com.fleetguard.agent` | Device-owner agent, minSdk 30, **no launcher icon**. Installed only through device-owner provisioning |
-| `console` | `com.fleetguard.console` | Admin console app: a hardened WebView. It bundles the web console for offline demo use, or connects to your server |
+| `agent` | `com.mobhunter.agent` | Device-owner agent, minSdk 30, **no launcher icon**. Installed only through device-owner provisioning |
+| `console` | `com.mobhunter.console` | Admin console app: a hardened WebView. It bundles the web console for offline demo use, or connects to your server |
 
 ## Build
 
@@ -22,19 +22,19 @@ The outputs are `agent/build/outputs/apk/release/agent-release.apk` and `console
 Without these environment variables, release APKs are signed with the **debug key**. That is fine for evaluation, but **never for production**:
 
 ```bash
-keytool -genkeypair -v -keystore fleetguard-release.jks -alias fleetguard -keyalg EC -groupname secp256r1 -validity 9125
-export FG_KEYSTORE_PATH=$PWD/fleetguard-release.jks FG_KEYSTORE_PASSWORD=… FG_KEY_ALIAS=fleetguard FG_KEY_PASSWORD=…
+keytool -genkeypair -v -keystore mob-hunter-release.jks -alias mob-hunter -keyalg EC -groupname secp256r1 -validity 9125
+export MH_KEYSTORE_PATH=$PWD/mob-hunter-release.jks MH_KEYSTORE_PASSWORD=… MH_KEY_ALIAS=mob-hunter MH_KEY_PASSWORD=…
 ```
 
-In GitHub Actions, add the repository secrets `FG_KEYSTORE_BASE64` (`base64 -w0 fleetguard-release.jks`), `FG_KEYSTORE_PASSWORD`, `FG_KEY_ALIAS` and `FG_KEY_PASSWORD`. Keep the keystore offline and backed up. If it is lost, every enrolled device has to be re-enrolled before it can take agent updates.
+In GitHub Actions, add the repository secrets `MH_KEYSTORE_BASE64` (`base64 -w0 mob-hunter-release.jks`), `MH_KEYSTORE_PASSWORD`, `MH_KEY_ALIAS` and `MH_KEY_PASSWORD`. Keep the keystore offline and backed up. If it is lost, every enrolled device has to be re-enrolled before it can take agent updates.
 
 ### Built-in server
 
-`FG_SERVER_URL=https://… ./gradlew :console:assembleRelease` (or `-PfgServerUrl=`) builds the console app connected to your server, with demo mode hidden. `pages.yml` does this with the live server URL.
+`MH_SERVER_URL=https://… ./gradlew :console:assembleRelease` (or `-PmhServerUrl=`) builds the console app connected to your server, with demo mode hidden. `pages.yml` does this with the live server URL.
 
 ### Published APKs
 
-`releases/android/` holds the current release-signed APKs and `SHA256SUMS.txt`. Signer: `CN=FleetGuard Agent, O=Falcon 98 Corporation`, certificate SHA-256 `006c3014…6b87`. Provisioning checksum: `AGwwFGMsyDDzIquB8gN_uFlyFiwPD5ml7tnCxFeKa4c`. `pages.yml` publishes these when the signing secrets aren't set. After a rebuild with the key, replace them.
+`releases/android/` holds the current release-signed APKs and `SHA256SUMS.txt`. Signer: `CN=Mob Hunter Agent, O=Falcon 98 Corporation`, certificate SHA-256 `006c3014…6b87`. Provisioning checksum: `AGwwFGMsyDDzIquB8gN_uFlyFiwPD5ml7tnCxFeKa4c`. `pages.yml` publishes these when the signing secrets aren't set. After a rebuild with the key, replace them.
 
 ### Provisioning checksum
 
@@ -46,7 +46,7 @@ Put the output in `APK_SIGNATURE_CHECKSUM` in `wrangler.toml`. Android refuses t
 
 ## Enrolling a phone (device owner)
 
-1. Make sure the release-signed agent is published at `APK_DOWNLOAD_URL` (by default GitHub Pages: `https://mob-hunter.github.io/downloads/fleetguard-agent.apk`).
+1. Make sure the release-signed agent is published at `APK_DOWNLOAD_URL` (by default GitHub Pages: `https://mob-hunter.github.io/downloads/mob-hunter-agent.apk`).
 2. In the console, go to **Add devices → Mint token + QR**.
 3. Factory-reset the phone. On the Welcome screen, **tap six times**, connect to Wi-Fi and scan the QR.
 4. Android downloads the agent from `APK_DOWNLOAD_URL`, checks its signature checksum and makes it device owner.
@@ -59,7 +59,7 @@ A sideloaded agent (installed from the APK link) is an ordinary app without devi
 
 | Area | Implementation |
 |---|---|
-| Identity | P-256 key in the Android Keystore (StrongBox where present). It signs every request (`X-FG-*` headers) over method, path, timestamp, nonce and SHA-256 of the body |
+| Identity | P-256 key in the Android Keystore (StrongBox where present). It signs every request (`X-MH-*` headers) over method, path, timestamp, nonce and SHA-256 of the body |
 | Commands | Verifies the server's Ed25519 signature (Google Tink) over the exact signed string. Checks device ID, ≤10-minute lifetime, expiry, clock skew, and replay (persisted IDs and nonces) |
 | Wake | FCM data message `{type: wake}` → expedited WorkManager sync. Without FCM, it syncs every 15 minutes and on boot |
 | Policy | DevicePolicyManager: no factory reset, USB transfer, unknown sources or debugging; password complexity, auto-lock, update window, location kept on, the agent's own permissions granted. Security and network logging are **forced off** |

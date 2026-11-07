@@ -77,7 +77,7 @@ export function LoginPage() {
           <span className="brand-mark" aria-hidden>
             ◈
           </span>
-          FleetGuard
+          Mob Hunter
         </h1>
         <p className="muted">Company-owned device management console</p>
         {err && <ErrorBox>{err}</ErrorBox>}
@@ -118,7 +118,7 @@ export function LoginPage() {
           </form>
         )}
         <p className="tiny muted">
-          {rt.mode === 'server' ? `Connected to FleetGuard server v${rt.health.version}. ` : 'Demo mode — everything runs in this browser. '}
+          {rt.mode === 'server' ? `Connected to Mob Hunter server v${rt.health.version}. ` : 'Demo mode — everything runs in this browser. '}
           <Link to="/privacy">Privacy &amp; governance</Link>
         </p>
       </div>

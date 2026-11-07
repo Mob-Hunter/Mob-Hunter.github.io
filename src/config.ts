@@ -1,6 +1,6 @@
 /**
  * Production configuration, fixed at build time.
- * VITE_SERVER_URL = the FleetGuard server (Cloudflare Worker) that hosts the live console and API.
+ * VITE_SERVER_URL = the Mob Hunter server (Cloudflare Worker) that hosts the live console and API.
  * When it is set, copies of the console served anywhere else (e.g. GitHub Pages) do not run the
  * in-browser demo: they show a landing page that sends people to the live server.
  */
@@ -20,14 +20,14 @@ export function isOffServer(): boolean {
 
 export const APK_FILES = [
   {
-    file: 'fleetguard-console.apk',
-    name: 'FleetGuard Console',
+    file: 'mob-hunter-console.apk',
+    name: 'Mob Hunter Console',
     who: 'Administrators',
-    text: 'The admin console as an Android app, connected to your FleetGuard server. Install it like any app (allow installs from your browser when asked).',
+    text: 'The admin console as an Android app, connected to your Mob Hunter server. Install it like any app (allow installs from your browser when asked).',
   },
   {
-    file: 'fleetguard-agent.apk',
-    name: 'FleetGuard device agent',
+    file: 'mob-hunter-agent.apk',
+    name: 'Mob Hunter device agent',
     who: 'Company phones (IT only)',
     text: 'Installed automatically when a factory-reset phone scans the enrolment QR from “Add devices”. Installing it from this link gives an ordinary app without management rights — for testing only.',
   },

@@ -96,7 +96,7 @@ function Phone({ agent }: { agent: SimulatedAgent }) {
                   <div className="notif-text">{n.text}</div>
                 </div>
               ))}
-              <p className="tiny center">FleetGuard agent uninstalled · restrictions removed · data kept</p>
+              <p className="tiny center">Mob Hunter agent uninstalled · restrictions removed · data kept</p>
             </div>
           ) : !device ? (
             <div className="phone-center">Not enrolled</div>

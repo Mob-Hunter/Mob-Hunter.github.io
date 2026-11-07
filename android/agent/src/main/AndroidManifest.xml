@@ -27,7 +27,7 @@
         android:label="@string/app_name"
         android:supportsRtl="true"
         android:usesCleartextTraffic="false"
-        android:theme="@style/Theme.FleetGuard"
+        android:theme="@style/Theme.MobHunter"
         tools:targetApi="35">
 
         <!-- Firebase is initialised manually from server-supplied options (no google-services.json). -->
@@ -79,7 +79,7 @@
             android:lockTaskMode="if_whitelisted"
             android:showWhenLocked="true"
             android:turnScreenOn="true"
-            android:theme="@style/Theme.FleetGuard.Lost" />
+            android:theme="@style/Theme.MobHunter.Lost" />
 
         <service
             android:name=".AgentService"

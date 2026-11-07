@@ -1,4 +1,4 @@
-package com.fleetguard.agent
+package com.mobhunter.agent
 
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
@@ -54,6 +54,6 @@ object AppInstaller {
 class InstallResultReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)
-        Log.i("FleetGuardAgent", "install result $status ${intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE)}")
+        Log.i("MobHunterAgent", "install result $status ${intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE)}")
     }
 }

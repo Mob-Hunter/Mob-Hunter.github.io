@@ -1,4 +1,4 @@
-package com.fleetguard.agent
+package com.mobhunter.agent
 
 import android.content.Context
 import org.json.JSONObject
@@ -8,7 +8,7 @@ import org.json.JSONObject
  * Contains no secrets: the private key lives in the Android Keystore.
  */
 class Config(context: Context) : DeviceCredentials {
-    private val p = context.applicationContext.getSharedPreferences("fleetguard", Context.MODE_PRIVATE)
+    private val p = context.applicationContext.getSharedPreferences("mob-hunter", Context.MODE_PRIVATE)
 
     override var apiBase: String? by pref("apiBase")
     var enrollToken: String? by pref("enrollToken")

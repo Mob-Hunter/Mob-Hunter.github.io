@@ -1,5 +1,5 @@
 /**
- * HTTP API for FleetGuard (build-prompt §3.3), as a platform-neutral Hono app.
+ * HTTP API for Mob Hunter (build-prompt §3.3), as a platform-neutral Hono app.
  *
  * In production it runs inside the TenantDO Durable Object (worker/tenant.ts),
  * which gives single-threaded, strongly consistent state. The same app is
@@ -11,8 +11,8 @@ import { sha256Hex, timingSafeEqual } from '../src/core/crypto';
 import { isCommandType, isRole } from '../src/core/rbac';
 import type { DeviceAuth } from '../src/core/types';
 
-export const SESSION_COOKIE = 'fg_sid';
-export const CSRF_HEADER = 'x-fleetguard-csrf';
+export const SESSION_COOKIE = 'mh_sid';
+export const CSRF_HEADER = 'x-mob-hunter-csrf';
 export const API_VERSION = '2.0.0';
 
 export interface ApkStore {
@@ -96,7 +96,7 @@ export function createApp(cfg: HttpConfig) {
 
   // ---------------------------------------------------------------- public
   app.get('/health', (c) =>
-    c.json({ service: 'fleetguard', mode: 'server', version: API_VERSION, needsBootstrap: c.var.backend.needsBootstrap(), sso: !!cfg.verifyAccessJwt }),
+    c.json({ service: 'mob-hunter', mode: 'server', version: API_VERSION, needsBootstrap: c.var.backend.needsBootstrap(), sso: !!cfg.verifyAccessJwt }),
   );
 
   app.post('/bootstrap', async (c) => {
@@ -115,7 +115,7 @@ export function createApp(cfg: HttpConfig) {
     const obj = await cfg.apks.get(`agent-${v}.apk`);
     if (!obj?.body) throw new ApiError(404, 'not_found', 'APK not found');
     return new Response(obj.body as BodyInit, {
-      headers: { 'content-type': 'application/vnd.android.package-archive', 'content-disposition': `attachment; filename="fleetguard-agent-${v}.apk"`, 'cache-control': 'public, max-age=300' },
+      headers: { 'content-type': 'application/vnd.android.package-archive', 'content-disposition': `attachment; filename="mob-hunter-agent-${v}.apk"`, 'cache-control': 'public, max-age=300' },
     });
   });
 
@@ -275,18 +275,18 @@ export function createApp(cfg: HttpConfig) {
     const h = (k: string) => c.req.header(k) ?? '';
     let cert: DeviceAuth['cert'];
     try {
-      cert = JSON.parse(atob(h('x-fg-cert')));
+      cert = JSON.parse(atob(h('x-mh-cert')));
     } catch {
       throw new ApiError(401, 'device_unauthenticated', 'Missing or malformed client certificate');
     }
     return {
-      deviceId: h('x-fg-device'),
+      deviceId: h('x-mh-device'),
       cert,
-      certSig: h('x-fg-cert-sig'),
-      ts: Number(h('x-fg-ts')),
-      nonce: h('x-fg-nonce'),
-      bodyHash: h('x-fg-body-sha256').toLowerCase(),
-      sig: h('x-fg-sig').toLowerCase(),
+      certSig: h('x-mh-cert-sig'),
+      ts: Number(h('x-mh-ts')),
+      nonce: h('x-mh-nonce'),
+      bodyHash: h('x-mh-body-sha256').toLowerCase(),
+      sig: h('x-mh-sig').toLowerCase(),
       serverBodyHash: await sha256Hex(raw),
     };
   };

@@ -1,4 +1,4 @@
-package com.fleetguard.agent
+package com.mobhunter.agent
 
 import android.app.Service
 import android.content.Context
@@ -35,7 +35,7 @@ class AgentService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        thread = HandlerThread("fleetguard-location").also { it.start() }
+        thread = HandlerThread("mob-hunter-location").also { it.start() }
         handler = Handler(thread.looper)
     }
 

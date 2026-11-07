@@ -1,4 +1,4 @@
-package com.fleetguard.agent
+package com.mobhunter.agent
 
 import android.annotation.SuppressLint
 import android.content.Context

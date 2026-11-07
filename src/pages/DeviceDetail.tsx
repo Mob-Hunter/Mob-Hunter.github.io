@@ -380,7 +380,7 @@ function DeleteCard({ deviceId, name, state }: { deviceId: string; name: string;
         <div className="small stack">
           <p>
             Deleting <strong>{name}</strong> removes it from management. The phone receives a signed command, lifts every restriction, tells the employee it is no longer
-            managed, gives up device-owner rights and <strong>uninstalls the FleetGuard agent</strong>. The record is deleted once the phone confirms.
+            managed, gives up device-owner rights and <strong>uninstalls the Mob Hunter agent</strong>. The record is deleted once the phone confirms.
           </p>
           <p className="muted">
             Nothing on the phone is wiped — the employee keeps it with their data. To erase it instead, use WIPE. If the phone is lost or never comes back online, retire it.

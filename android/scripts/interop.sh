@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Runs the agent's real ApiClient + CommandVerifier against the FleetGuard Worker
+# Runs the agent's real ApiClient + CommandVerifier against the Mob Hunter Worker
 # in workerd (fresh storage). Requires: npm ci && npm run build in the repo root,
 # ANDROID_HOME set. Usage: android/scripts/interop.sh
 set -euo pipefail
@@ -17,6 +17,6 @@ trap cleanup EXIT
 for _ in $(seq 1 60); do curl -sf "http://127.0.0.1:$PORT/api/health" >/dev/null && break; sleep 1; done
 curl -sf "http://127.0.0.1:$PORT/api/health" >/dev/null || { cat "$LOG"; exit 1; }
 cd android
-FG_INTEROP_URL="http://127.0.0.1:$PORT" FG_INTEROP_BOOTSTRAP="$TOKEN" ./gradlew --no-daemon :agent:testDebugUnitTest --tests '*InteropTest*' --rerun-tasks
-grep -q 'skipped="0"' agent/build/test-results/testDebugUnitTest/TEST-com.fleetguard.agent.InteropTest.xml || { echo "InteropTest was skipped" >&2; exit 1; }
+MH_INTEROP_URL="http://127.0.0.1:$PORT" MH_INTEROP_BOOTSTRAP="$TOKEN" ./gradlew --no-daemon :agent:testDebugUnitTest --tests '*InteropTest*' --rerun-tasks
+grep -q 'skipped="0"' agent/build/test-results/testDebugUnitTest/TEST-com.mobhunter.agent.InteropTest.xml || { echo "InteropTest was skipped" >&2; exit 1; }
 echo "Agent <-> server interop: passed"

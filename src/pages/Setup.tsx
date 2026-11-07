@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { Navigate } from 'react-router-dom';
 import { Card, ErrorBox, Field, QrImage, errorText, useRuntime } from '../ui/kit';
 
-/** First-run setup on a fresh FleetGuard server: creates the first Super Admin. */
+/** First-run setup on a fresh Mob Hunter server: creates the first Super Admin. */
 export function SetupPage() {
   const rt = useRuntime();
   const [form, setForm] = useState({ token: '', name: '', email: '', password: '', confirm: '' });
@@ -30,7 +30,7 @@ export function SetupPage() {
   return (
     <div className="public-page">
       <div className="page narrow">
-        <h1>Set up FleetGuard</h1>
+        <h1>Set up Mob Hunter</h1>
         {!done ? (
           <Card title="Create the first Super Admin">
             <p className="small muted">

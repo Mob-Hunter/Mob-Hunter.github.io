@@ -17,7 +17,7 @@ export function SettingsPage() {
       <Card title="Connection">
         <dl className="kv">
           <dt>Mode</dt>
-          <dd>{rt.mode === 'server' ? `FleetGuard server v${rt.health.version}` : 'Demo — in-browser reference backend (no data leaves this device)'}</dd>
+          <dd>{rt.mode === 'server' ? `Mob Hunter server v${rt.health.version}` : 'Demo — in-browser reference backend (no data leaves this device)'}</dd>
           <dt>Single sign-on</dt>
           <dd>{rt.health.sso ? 'Cloudflare Access enabled' : 'Not configured'}</dd>
           <dt>Console origin</dt>

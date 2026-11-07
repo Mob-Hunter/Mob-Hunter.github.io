@@ -1,4 +1,4 @@
-package com.fleetguard.agent
+package com.mobhunter.agent
 
 import android.content.Context
 import android.content.Intent
@@ -100,7 +100,7 @@ class CommandExecutor(private val ctx: Context, private val config: Config, priv
                 else -> result(id, "rejected", "Unsupported command")
             }
         } catch (e: Exception) {
-            Log.w("FleetGuardAgent", "command $type failed", e)
+            Log.w("MobHunterAgent", "command $type failed", e)
             runCatching { result(id, "failed", e.message ?: e.javaClass.simpleName) }
         }
     }

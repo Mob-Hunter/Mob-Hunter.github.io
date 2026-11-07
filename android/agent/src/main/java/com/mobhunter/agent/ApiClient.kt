@@ -1,4 +1,4 @@
-package com.fleetguard.agent
+package com.mobhunter.agent
 
 import org.json.JSONArray
 import org.json.JSONObject
@@ -10,7 +10,7 @@ import java.security.SecureRandom
 class ApiException(val status: Int, val code: String, message: String) : IOException(message)
 
 /**
- * The device side of the FleetGuard wire protocol.
+ * The device side of the Mob Hunter wire protocol.
  * Every authenticated call carries the CA-issued certificate and an ECDSA
  * signature (Keystore key) over METHOD \n PATH \n ts \n nonce \n sha256(raw body).
  * HTTPS only; the server's command-signing key is pinned separately.
@@ -41,7 +41,7 @@ class ApiClient(private val config: DeviceCredentials, private val signer: (Stri
             readTimeout = 30_000
             useCaches = false
             setRequestProperty("Accept", "application/json")
-            setRequestProperty("User-Agent", "FleetGuardAgent/${BuildConfigShim.VERSION}")
+            setRequestProperty("User-Agent", "MobHunterAgent/${BuildConfigShim.VERSION}")
         }
     }
 
@@ -70,13 +70,13 @@ class ApiClient(private val config: DeviceCredentials, private val signer: (Stri
         val bodyHash = Hex.sha256(raw)
         val message = "${method}\n${path}\n${ts}\n${nonce}\n${bodyHash}"
         val c = open(path, method)
-        c.setRequestProperty("X-FG-Device", config.deviceId)
-        c.setRequestProperty("X-FG-Cert", java.util.Base64.getEncoder().encodeToString(config.certJson!!.toByteArray(Charsets.UTF_8)))
-        c.setRequestProperty("X-FG-Cert-Sig", config.certSig)
-        c.setRequestProperty("X-FG-Ts", ts.toString())
-        c.setRequestProperty("X-FG-Nonce", nonce)
-        c.setRequestProperty("X-FG-Body-SHA256", bodyHash)
-        c.setRequestProperty("X-FG-Sig", signer(message))
+        c.setRequestProperty("X-MH-Device", config.deviceId)
+        c.setRequestProperty("X-MH-Cert", java.util.Base64.getEncoder().encodeToString(config.certJson!!.toByteArray(Charsets.UTF_8)))
+        c.setRequestProperty("X-MH-Cert-Sig", config.certSig)
+        c.setRequestProperty("X-MH-Ts", ts.toString())
+        c.setRequestProperty("X-MH-Nonce", nonce)
+        c.setRequestProperty("X-MH-Body-SHA256", bodyHash)
+        c.setRequestProperty("X-MH-Sig", signer(message))
         if (body != null) {
             c.doOutput = true
             c.setRequestProperty("Content-Type", "application/json")

@@ -44,7 +44,7 @@ export class TenantDO extends DurableObject<Env> {
       pbkdf2Iterations: 100_000,
       push: this.env.FCM_SERVICE_ACCOUNT ? new FcmPushProvider(this.env.FCM_SERVICE_ACCOUNT, fetch, (m) => console.warn(m)) : new NoopPushProvider(),
       apkVersion: this.env.APK_VERSION || undefined,
-      apkDownloadUrl: this.env.APK_DOWNLOAD_URL || `${(this.env.PUBLIC_URL || 'https://localhost').replace(/\/$/, '')}/downloads/fleetguard-agent.apk`,
+      apkDownloadUrl: this.env.APK_DOWNLOAD_URL || `${(this.env.PUBLIC_URL || 'https://localhost').replace(/\/$/, '')}/downloads/mob-hunter-agent.apk`,
       apkSignatureChecksum: this.env.APK_SIGNATURE_CHECKSUM || undefined,
       onAudit: (row) => this.forwardAudit(row),
     }).then(async (b) => {
@@ -63,7 +63,7 @@ export class TenantDO extends DurableObject<Env> {
       this.ctx.waitUntil(
         (async () => {
           const sig = this.env.SIEM_WEBHOOK_SECRET ? await hmacHex(this.env.SIEM_WEBHOOK_SECRET, body) : '';
-          await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', 'x-fleetguard-signature': sig }, body }).catch((e) => console.warn('SIEM forward failed', e));
+          await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', 'x-mob-hunter-signature': sig }, body }).catch((e) => console.warn('SIEM forward failed', e));
         })(),
       );
     });

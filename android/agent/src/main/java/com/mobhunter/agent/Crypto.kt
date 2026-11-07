@@ -1,4 +1,4 @@
-package com.fleetguard.agent
+package com.mobhunter.agent
 
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
@@ -40,7 +40,7 @@ object ServerCrypto {
  * never leaves the secure hardware; only its public half is sent at enrolment.
  */
 object DeviceKey {
-    private const val ALIAS = "fleetguard-device-identity"
+    private const val ALIAS = "mob-hunter-device-identity"
     private val ks: KeyStore get() = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
 
     fun exists(): Boolean = ks.containsAlias(ALIAS)

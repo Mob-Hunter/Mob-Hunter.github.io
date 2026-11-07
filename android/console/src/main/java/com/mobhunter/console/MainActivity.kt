@@ -1,4 +1,4 @@
-package com.fleetguard.console
+package com.mobhunter.console
 
 import android.annotation.SuppressLint
 import android.app.Activity
@@ -20,10 +20,10 @@ import android.widget.Toast
 import androidx.webkit.WebViewAssetLoader
 
 /**
- * FleetGuard Console for Android.
+ * Mob Hunter Console for Android.
  *  - Demo/offline: the bundled console (assets/www) served from a secure https
  *    origin via WebViewAssetLoader; the reference backend runs on the phone.
- *  - Server: loads your FleetGuard server (same-origin cookies, real backend).
+ *  - Server: loads your Mob Hunter server (same-origin cookies, real backend).
  * Navigation is locked to that one origin; everything else opens in the browser.
  */
 class MainActivity : Activity() {
@@ -63,7 +63,7 @@ class MainActivity : Activity() {
             mediaPlaybackRequiresUserGesture = true
             if (Build.VERSION.SDK_INT >= 26) safeBrowsingEnabled = true
         }
-        web.addJavascriptInterface(NativeBridge(this), "FleetGuardNative")
+        web.addJavascriptInterface(NativeBridge(this), "MobHunterNative")
         web.webViewClient = object : WebViewClient() {
             override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? =
                 if (server == null) assets.shouldInterceptRequest(request.url) else null

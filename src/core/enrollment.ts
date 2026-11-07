@@ -1,7 +1,7 @@
 import type { DevicePolicy, ProvisioningPayload } from './types';
 
 export const ENROLLMENT_TTL_MS = 15 * 60 * 1000;
-export const AGENT_PACKAGE = 'com.fleetguard.agent';
+export const AGENT_PACKAGE = 'com.mobhunter.agent';
 export const AGENT_COMPONENT = `${AGENT_PACKAGE}/.AgentAdminReceiver`;
 export const AGENT_VERSION = '1.0.0';
 /** SHA-256 of the APK signing certificate, URL-safe base64 as Android expects. Replace at release time. */

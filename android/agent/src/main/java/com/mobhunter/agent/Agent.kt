@@ -1,4 +1,4 @@
-package com.fleetguard.agent
+package com.mobhunter.agent
 
 import android.content.Context
 import android.util.Log
@@ -17,7 +17,7 @@ class Agent(private val ctx: Context) {
     private val api = ApiClient(config)
 
     companion object {
-        private const val TAG = "FleetGuardAgent"
+        private const val TAG = "MobHunterAgent"
         private val lock = Any()
     }
 

@@ -1,4 +1,4 @@
-package com.fleetguard.agent
+package com.mobhunter.agent
 
 import org.junit.Assert.assertEquals
 import org.junit.Test
