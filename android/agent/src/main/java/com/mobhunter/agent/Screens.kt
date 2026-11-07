@@ -1,4 +1,4 @@
-package com.fleetguard.agent
+package com.mobhunter.agent
 
 import android.app.Activity
 import android.app.admin.DevicePolicyManager
@@ -149,7 +149,7 @@ private fun noticeView(a: Activity, onDone: (Boolean) -> Unit): View {
 
 /** Full-screen Lost Mode (lock task when permitted). Exits only when the server ends Lost Mode. */
 class LostModeActivity : Activity() {
-    companion object { const val ACTION_EXIT = "com.fleetguard.agent.EXIT_LOST_MODE" }
+    companion object { const val ACTION_EXIT = "com.mobhunter.agent.EXIT_LOST_MODE" }
 
     private val exit = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {

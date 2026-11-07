@@ -1,6 +1,6 @@
 /**
  * Browser runtime. Picks the operating mode at start-up:
- *  - server: the console is served by a FleetGuard server (/api/health answers) —
+ *  - server: the console is served by a Mob Hunter server (/api/health answers) —
  *    every call goes to the real backend over HTTPS with a session cookie.
  *  - demo:   GitHub Pages (or offline APK) — the reference backend runs in the
  *    browser, seeded with demo accounts and simulated phones.
@@ -14,10 +14,10 @@ import { totp } from './core/totp';
 import { LocalConsoleApi, RemoteConsoleApi, type ConsoleApi, type Health } from './api/console';
 import { HttpDeviceTransport } from './api/device';
 
-const STATE_KEY = 'fleetguard.state.v1';
-const AGENTS_KEY = 'fleetguard.agents.v1';
-const DEMO_KEY = 'fleetguard.demo.v1';
-const SESSION_KEY = 'fleetguard.sid';
+const STATE_KEY = 'mob-hunter.state.v1';
+const AGENTS_KEY = 'mob-hunter.agents.v1';
+const DEMO_KEY = 'mob-hunter.demo.v1';
+const SESSION_KEY = 'mob-hunter.sid';
 
 function safeGet(storage: Storage | undefined, key: string): string | null {
   try {
@@ -104,7 +104,7 @@ export class Runtime {
       clearTimeout(t);
       if (!res.ok || !(res.headers.get('content-type') ?? '').includes('json')) return null;
       const j = (await res.json()) as Health;
-      return j?.service === 'fleetguard' && j.mode === 'server' ? j : null;
+      return j?.service === 'mob-hunter' && j.mode === 'server' ? j : null;
     } catch {
       return null;
     }

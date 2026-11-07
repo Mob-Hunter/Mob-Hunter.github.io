@@ -376,8 +376,8 @@ export function Field({ label, hint, children }: { label: string; hint?: ReactNo
 }
 
 export function download(filename: string, text: string, type = 'application/json') {
-  // Inside the FleetGuard Console APK, save through the native bridge (WebView cannot download blobs).
-  const native = (window as unknown as { FleetGuardNative?: { saveFile(n: string, m: string, b64: string): boolean } }).FleetGuardNative;
+  // Inside the Mob Hunter Console APK, save through the native bridge (WebView cannot download blobs).
+  const native = (window as unknown as { MobHunterNative?: { saveFile(n: string, m: string, b64: string): boolean } }).MobHunterNative;
   if (native) {
     const bytes = new TextEncoder().encode(text);
     let bin = '';

@@ -224,7 +224,7 @@ function BulkBar({ devices, onDone }: { devices: DeviceView[]; onDone: () => voi
             )}
             {live.length > 0 && (
               <>
-                <strong>{live.length}</strong> active phone(s) will release management and <strong>uninstall the FleetGuard agent</strong> (nothing is wiped); each record is
+                <strong>{live.length}</strong> active phone(s) will release management and <strong>uninstall the Mob Hunter agent</strong> (nothing is wiped); each record is
                 deleted when its phone confirms.{' '}
               </>
             )}

@@ -1,4 +1,4 @@
-package com.fleetguard.agent
+package com.mobhunter.agent
 
 import org.json.JSONArray
 import org.json.JSONObject
@@ -17,16 +17,16 @@ import javax.crypto.spec.SecretKeySpec
 
 /**
  * Cross-language interop: the agent's REAL ApiClient + CommandVerifier against a
- * running FleetGuard Worker (workerd via `wrangler dev`). Skipped unless
- * FG_INTEROP_URL (e.g. http://127.0.0.1:8787) and FG_INTEROP_BOOTSTRAP are set;
+ * running Mob Hunter Worker (workerd via `wrangler dev`). Skipped unless
+ * MH_INTEROP_URL (e.g. http://127.0.0.1:8787) and MH_INTEROP_BOOTSTRAP are set;
  * CI sets them in the Android job.
  *
  * The device key is a software P-256 key producing the same DER SHA256withECDSA
  * signatures as the Android Keystore key.
  */
 class InteropTest {
-    private val base = System.getenv("FG_INTEROP_URL")?.trimEnd('/')
-    private val bootstrap = System.getenv("FG_INTEROP_BOOTSTRAP")
+    private val base = System.getenv("MH_INTEROP_URL")?.trimEnd('/')
+    private val bootstrap = System.getenv("MH_INTEROP_BOOTSTRAP")
     private val password = "correct horse battery staple"
 
     // ---- a minimal admin client (cookie session + CSRF header) ----
@@ -35,7 +35,7 @@ class InteropTest {
         fun call(method: String, path: String, body: JSONObject? = null): Any {
             val c = URL("$base/api$path").openConnection() as HttpURLConnection
             c.requestMethod = method
-            c.setRequestProperty("x-fleetguard-csrf", "1")
+            c.setRequestProperty("x-mob-hunter-csrf", "1")
             cookie?.let { c.setRequestProperty("Cookie", it) }
             if (body != null) {
                 c.doOutput = true
@@ -79,7 +79,7 @@ class InteropTest {
     }
 
     @Test fun agentInteroperatesWithRealServer() {
-        assumeTrue("set FG_INTEROP_URL and FG_INTEROP_BOOTSTRAP to run", base != null && bootstrap != null)
+        assumeTrue("set MH_INTEROP_URL and MH_INTEROP_BOOTSTRAP to run", base != null && bootstrap != null)
 
         // --- admin: bootstrap (or reuse), invite a Location Operator, mint an enrolment
         val admin = Admin()

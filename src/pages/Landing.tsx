@@ -20,14 +20,14 @@ export function Landing() {
           <span className="brand-mark" aria-hidden>
             ◈
           </span>
-          FleetGuard
+          Mob Hunter
         </h1>
         <h1>Company device management</h1>
         <div className="card landing-card">
           <div className="download-card">
-            <QrImage text={target} label="QR code to open the FleetGuard console" />
+            <QrImage text={target} label="QR code to open the Mob Hunter console" />
             <div className="stack">
-              <p>The FleetGuard console runs on your organisation&apos;s secure server.</p>
+              <p>The Mob Hunter console runs on your organisation&apos;s secure server.</p>
               <a className="btn btn-primary" href={target}>
                 Open the console →
               </a>

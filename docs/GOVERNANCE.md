@@ -64,12 +64,12 @@ Viewing location under ticket X should show the fixes collected for ticket X, no
 
 ### 7. Agent APK signing key = control of every phone (High)
 **Risk.** Whoever holds the agent's signing key can ship an "update" that every enrolled device-owner phone will accept.
-**Overcome it.** Generate the release keystore offline. Store it in a hardware security module or an offline vault with two named custodians, and give CI access only through encrypted secrets (`FG_KEYSTORE_*`). Never use the debug-signed evaluation APKs on staff phones. Record the key's fingerprint in the DPIA.
+**Overcome it.** Generate the release keystore offline. Store it in a hardware security module or an offline vault with two named custodians, and give CI access only through encrypted secrets (`MH_KEYSTORE_*`). Never use the debug-signed evaluation APKs on staff phones. Record the key's fingerprint in the DPIA.
 **Built in:** release signing reads only from CI secrets. The provisioning QR pins the signing-certificate checksum, so Android refuses an agent signed with any other key. CI warns loudly when it falls back to debug signing.
 
 ### 8. Admin console on a phone (Medium)
 **Risk.** Someone who finds an unlocked admin phone could act as that administrator.
-**Overcome it.** Use SSO with MFA and short sessions. Enrol the admins' own phones in FleetGuard with a screen lock enforced. Revoke sessions from *Users & access* when a phone is lost.
+**Overcome it.** Use SSO with MFA and short sessions. Enrol the admins' own phones in Mob Hunter with a screen lock enforced. Revoke sessions from *Users & access* when a phone is lost.
 **Built in:** the console APK is locked to one origin, has backup disabled and allows HTTPS only. Sessions are HttpOnly cookies that expire after 30 minutes idle and 12 hours in total, and can be revoked centrally.
 
 ### 9. SIEM forwarding and DSAR exports carry personal data (Medium)

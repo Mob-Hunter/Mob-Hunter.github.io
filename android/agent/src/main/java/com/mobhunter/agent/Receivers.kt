@@ -1,4 +1,4 @@
-package com.fleetguard.agent
+package com.mobhunter.agent
 
 import android.app.admin.DeviceAdminReceiver
 import android.app.admin.DevicePolicyManager

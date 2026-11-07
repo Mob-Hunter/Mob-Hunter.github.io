@@ -6,7 +6,7 @@ export interface Env {
   PUBLIC_URL: string;
   APK_VERSION?: string;
   APK_SIGNATURE_CHECKSUM?: string;
-  /** where Android downloads the agent during QR provisioning (default: <PUBLIC_URL>/downloads/fleetguard-agent.apk) */
+  /** where Android downloads the agent during QR provisioning (default: <PUBLIC_URL>/downloads/mob-hunter-agent.apk) */
   APK_DOWNLOAD_URL?: string;
   ACCESS_TEAM_DOMAIN?: string;
   ACCESS_AUD?: string;

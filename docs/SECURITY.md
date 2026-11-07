@@ -3,7 +3,7 @@
 ## Trust boundaries
 | Boundary | Production (Cloudflare Worker + Android agent) | Demo (GitHub Pages / offline console APK) |
 |---|---|---|
-| Admin → API | Password (PBKDF2, 100k iterations) + TOTP, or Cloudflare Access SSO. HttpOnly, Secure, SameSite=Strict session cookie plus the `x-fleetguard-csrf` header. Per-IP and per-account rate limits | The same backend logic, running in the browser. An opaque session ID is held in `sessionStorage` |
+| Admin → API | Password (PBKDF2, 100k iterations) + TOTP, or Cloudflare Access SSO. HttpOnly, Secure, SameSite=Strict session cookie plus the `x-mob-hunter-csrf` header. Per-IP and per-account rate limits | The same backend logic, running in the browser. An opaque session ID is held in `sessionStorage` |
 | Device → API | P-256 key in the Android Keystore. CA-issued certificate plus a per-request ECDSA signature over method, path, ts, nonce and SHA-256(raw body). 5-minute window, nonce tracking, revocation on wipe or retire. HTTPS only. Optional API Shield mTLS | The simulator uses Ed25519 keys and the same signature scheme |
 | Server → device | Ed25519 signature over the exact `signed` string (nonce, ≤10-minute expiry, run once). The agent pins the key's fingerprint from the QR | Identical |
 | Push | FCM data message `{type: wake}` only, with no command or personal data | Simulated wake |

@@ -1,4 +1,4 @@
-package com.fleetguard.agent
+package com.mobhunter.agent
 
 import android.app.Notification
 import android.app.NotificationManager
@@ -25,7 +25,7 @@ import androidx.work.WorkManager
  * from a notification if the system blocks opening it from the background).
  */
 object Releaser {
-    private const val TAG = "FleetGuardAgent"
+    private const val TAG = "MobHunterAgent"
     const val ID_UNINSTALL = 1201
 
     /** Restrictions the agent may have set (PolicyEnforcer) — all cleared on release. */
@@ -98,7 +98,7 @@ class UninstallResultReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)
         if (status != PackageInstaller.STATUS_PENDING_USER_ACTION) {
-            Log.i("FleetGuardAgent", "uninstall status $status ${intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE)}")
+            Log.i("MobHunterAgent", "uninstall status $status ${intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE)}")
             return
         }
         @Suppress("DEPRECATION")

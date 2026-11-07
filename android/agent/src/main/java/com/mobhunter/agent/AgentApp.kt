@@ -1,4 +1,4 @@
-package com.fleetguard.agent
+package com.mobhunter.agent
 
 import android.app.Application
 import androidx.work.Constraints
@@ -29,7 +29,7 @@ object Sync {
 
     fun schedulePeriodic(ctx: Context) {
         WorkManager.getInstance(ctx).enqueueUniquePeriodicWork(
-            "fleetguard-sync",
+            "mob-hunter-sync",
             ExistingPeriodicWorkPolicy.KEEP,
             PeriodicWorkRequestBuilder<SyncWorker>(15, TimeUnit.MINUTES).setConstraints(net).build(),
         )
@@ -37,7 +37,7 @@ object Sync {
 
     fun now(ctx: Context) {
         WorkManager.getInstance(ctx).enqueueUniqueWork(
-            "fleetguard-sync-now",
+            "mob-hunter-sync-now",
             ExistingWorkPolicy.REPLACE,
             OneTimeWorkRequestBuilder<SyncWorker>().setConstraints(net).setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST).build(),
         )

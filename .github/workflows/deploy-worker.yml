@@ -13,7 +13,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  SERVER_URL: ${{ vars.FLEETGUARD_SERVER_URL || 'https://fleetguard.inbox-ashen.workers.dev' }}
+  SERVER_URL: ${{ vars.MOBHUNTER_SERVER_URL || 'https://mob-hunter.inbox-ashen.workers.dev' }}
 
 jobs:
   deploy:

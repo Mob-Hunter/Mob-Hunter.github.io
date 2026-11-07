@@ -1,4 +1,4 @@
-package com.fleetguard.agent
+package com.mobhunter.agent
 
 import com.google.crypto.tink.subtle.Ed25519Sign
 import org.json.JSONObject

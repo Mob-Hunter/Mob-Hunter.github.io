@@ -35,7 +35,7 @@ function totp(b32, now = Date.now()) {
   return String((mac.readUInt32BE(o) & 0x7fffffff) % 1e6).padStart(6, '0');
 }
 
-const persist = mkdtempSync(join(tmpdir(), 'fg-e2e-'));
+const persist = mkdtempSync(join(tmpdir(), 'mh-e2e-'));
 const wrangler = spawn('npx', ['wrangler', 'dev', '--port', String(PORT), '--ip', '127.0.0.1', '--persist-to', persist,
   '--var', `PUBLIC_URL:http://127.0.0.1:${PORT}`, '--var', 'INSECURE_DEV_COOKIES:true', '--var', `BOOTSTRAP_TOKEN:${TOKEN}`], { stdio: ['ignore', 'pipe', 'pipe'], detached: true, env: { ...process.env, WRANGLER_SEND_METRICS: 'false' } });
 let wlog = '';
@@ -73,7 +73,7 @@ try {
   };
 
   await page.goto(BASE);
-  await page.getByRole('heading', { name: 'Set up FleetGuard' }).waitFor({ timeout: 30000 });
+  await page.getByRole('heading', { name: 'Set up Mob Hunter' }).waitFor({ timeout: 30000 });
   await page.getByLabel('Bootstrap token').fill(TOKEN);
   await page.getByLabel('Your name').fill('Root Admin');
   await page.getByLabel('Work e-mail').fill('root@corp.test');
@@ -103,7 +103,7 @@ try {
   await page.getByAltText('Device-owner provisioning QR code').waitFor();
   const prov = JSON.parse(await page.locator('pre.code').textContent());
   // Provisioning downloads the release-signed agent published on GitHub Pages (APK_DOWNLOAD_URL in wrangler.toml).
-  assert.equal(prov['android.app.extra.PROVISIONING_DEVICE_ADMIN_PACKAGE_DOWNLOAD_LOCATION'], 'https://mob-hunter.github.io/downloads/fleetguard-agent.apk');
+  assert.equal(prov['android.app.extra.PROVISIONING_DEVICE_ADMIN_PACKAGE_DOWNLOAD_LOCATION'], 'https://mob-hunter.github.io/downloads/mob-hunter-agent.apk');
   await page.getByRole('button', { name: /Simulate a phone scanning this QR/ }).click();
   await page.locator('.toast-ok', { hasText: 'enrolled' }).waitFor();
   await page.getByRole('link', { name: /Device simulator/ }).click();

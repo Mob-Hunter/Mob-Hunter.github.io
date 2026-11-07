@@ -82,7 +82,7 @@ async function bootstrapped() {
 describe('Worker HTTP API', () => {
   it('health reports bootstrap state; bootstrap needs the token and works once', async () => {
     const { call } = await setup();
-    expect((await call('GET', '/health')).json).toMatchObject({ service: 'fleetguard', mode: 'server', needsBootstrap: true });
+    expect((await call('GET', '/health')).json).toMatchObject({ service: 'mob-hunter', mode: 'server', needsBootstrap: true });
     expect((await call('POST', '/bootstrap', { token: 'wrong', name: 'x', email: 'a@b.co', password: PW })).status).toBe(403);
     const ok = await call('POST', '/bootstrap', { token: BOOT, name: 'Root', email: 'root@corp.test', password: PW });
     expect(ok.status).toBe(201);
@@ -136,13 +136,13 @@ describe('Worker HTTP API', () => {
       const nonce = randomId('', 12);
       const bodyHash = await sha256Hex(raw);
       const h: Record<string, string> = {
-        'x-fg-device': en.json.deviceId,
-        'x-fg-cert': btoa(en.json.certJson),
-        'x-fg-cert-sig': en.json.certSig,
-        'x-fg-ts': String(ts),
-        'x-fg-nonce': nonce,
-        'x-fg-body-sha256': bodyHash,
-        'x-fg-sig': await sign(deviceRequestMessage(method, path, ts, nonce, bodyHash)),
+        'x-mh-device': en.json.deviceId,
+        'x-mh-cert': btoa(en.json.certJson),
+        'x-mh-cert-sig': en.json.certSig,
+        'x-mh-ts': String(ts),
+        'x-mh-nonce': nonce,
+        'x-mh-body-sha256': bodyHash,
+        'x-mh-sig': await sign(deviceRequestMessage(method, path, ts, nonce, bodyHash)),
       };
       tamper?.(h);
       const res = await ctx.app.request(`/api${path}`, { method, headers: { ...h, ...(raw ? { 'content-type': 'application/json' } : {}) }, body: raw || undefined });
@@ -153,9 +153,9 @@ describe('Worker HTTP API', () => {
     expect(ci.status).toBe(200);
     expect(ci.json.state).toBe('active');
     // tampered body hash / signature / missing cert are rejected
-    expect((await dev('GET', '/v1/policy', undefined, (h) => (h['x-fg-sig'] = '00'.repeat(70)))).status).toBe(401);
-    expect((await dev('GET', '/v1/policy', undefined, (h) => (h['x-fg-body-sha256'] = 'a'.repeat(64)))).status).toBe(401);
-    expect((await dev('GET', '/v1/policy', undefined, (h) => delete h['x-fg-cert'])).status).toBe(401);
+    expect((await dev('GET', '/v1/policy', undefined, (h) => (h['x-mh-sig'] = '00'.repeat(70)))).status).toBe(401);
+    expect((await dev('GET', '/v1/policy', undefined, (h) => (h['x-mh-body-sha256'] = 'a'.repeat(64)))).status).toBe(401);
+    expect((await dev('GET', '/v1/policy', undefined, (h) => delete h['x-mh-cert'])).status).toBe(401);
 
     // --- operator issues LOCATE
     await ctx.signIn('op@corp.test', opSecret, 'op');

@@ -2,7 +2,7 @@
  * Console API: everything the admin UI can do, as one async interface with two
  * implementations:
  *  - LocalConsoleApi: the in-browser reference backend (GitHub Pages demo).
- *  - RemoteConsoleApi: a FleetGuard server (Cloudflare Worker) over HTTPS with
+ *  - RemoteConsoleApi: a Mob Hunter server (Cloudflare Worker) over HTTPS with
  *    an HttpOnly session cookie + CSRF header.
  * Every authorisation decision is made by the backend in both cases.
  */
@@ -26,7 +26,7 @@ export type IncidentTrack = Awaited<ReturnType<Backend['trackIncident']>>;
 export type ReportIncidentInput = Parameters<Backend['reportIncident']>[2];
 export type IncidentRecord = Awaited<ReturnType<Backend['reportIncident']>>;
 export type LocationFilter = { deviceId?: string; ticket: string; tier?: 1 | 2 | 3; sinceMs?: number; onlyTicket?: boolean };
-export type Health = { service: 'fleetguard'; mode: 'demo' | 'server'; version: string; needsBootstrap: boolean; sso: boolean };
+export type Health = { service: 'mob-hunter'; mode: 'demo' | 'server'; version: string; needsBootstrap: boolean; sso: boolean };
 export type { ComplianceIssue, DeviceView, LocationView, Notice };
 
 export interface ConsoleApi {
@@ -107,7 +107,7 @@ export class LocalConsoleApi implements ConsoleApi {
     return v;
   }
   async health(): Promise<Health> {
-    return { service: 'fleetguard', mode: 'demo', version: '2.0.0', needsBootstrap: this.b.needsBootstrap(), sso: false };
+    return { service: 'mob-hunter', mode: 'demo', version: '2.0.0', needsBootstrap: this.b.needsBootstrap(), sso: false };
   }
   bootstrap(input: { token: string; name: string; email: string; password: string }) {
     return this.b.bootstrap(input);
@@ -121,7 +121,7 @@ export class LocalConsoleApi implements ConsoleApi {
     return r.user;
   }
   async sso(): Promise<PublicUser> {
-    throw new ApiError(404, 'sso_disabled', 'Single sign-on is only available on a FleetGuard server');
+    throw new ApiError(404, 'sso_disabled', 'Single sign-on is only available on a Mob Hunter server');
   }
   async logout() {
     const v = this.sid.get();
@@ -283,7 +283,7 @@ export class RemoteConsoleApi implements ConsoleApi {
     const res = await this.fetcher(`${this.base}${path}`, {
       method,
       credentials: 'same-origin',
-      headers: { 'x-fleetguard-csrf': '1', ...(body !== undefined ? { 'content-type': 'application/json' } : {}) },
+      headers: { 'x-mob-hunter-csrf': '1', ...(body !== undefined ? { 'content-type': 'application/json' } : {}) },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
     if (raw && res.ok) return (await res.text()) as T;

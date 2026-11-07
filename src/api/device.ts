@@ -1,7 +1,7 @@
 /**
  * Device-side transport: how an agent reaches the backend.
  * - LocalDeviceTransport calls the in-browser reference backend (demo mode).
- * - HttpDeviceTransport speaks the real wire protocol to a FleetGuard server:
+ * - HttpDeviceTransport speaks the real wire protocol to a Mob Hunter server:
  *   signed headers over the raw body bytes (what the Android agent does).
  */
 import type { Backend } from '../core/backend';
@@ -97,13 +97,13 @@ export class HttpDeviceTransport implements DeviceTransport {
     const bodyHash = await sha256Hex(raw);
     const sig = await signer.sign(deviceRequestMessage(method, path, ts, nonce, bodyHash));
     const headers: Record<string, string> = {
-      'x-fg-device': signer.deviceId,
-      'x-fg-cert': btoa(canonicalJson(signer.cert)),
-      'x-fg-cert-sig': signer.certSig,
-      'x-fg-ts': String(ts),
-      'x-fg-nonce': nonce,
-      'x-fg-body-sha256': bodyHash,
-      'x-fg-sig': sig,
+      'x-mh-device': signer.deviceId,
+      'x-mh-cert': btoa(canonicalJson(signer.cert)),
+      'x-mh-cert-sig': signer.certSig,
+      'x-mh-ts': String(ts),
+      'x-mh-nonce': nonce,
+      'x-mh-body-sha256': bodyHash,
+      'x-mh-sig': sig,
     };
     if (raw) headers['content-type'] = 'application/json';
     return this.parse<T>(await this.fetcher(this.url(path), { method, headers, body: raw || undefined }));

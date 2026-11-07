@@ -1521,7 +1521,7 @@ export class Backend {
   }
 
   otpauthUri(email: string, secret: string): string {
-    const issuer = encodeURIComponent(this.state.settings?.orgName || 'FleetGuard');
+    const issuer = encodeURIComponent(this.state.settings?.orgName || 'Mob Hunter');
     return `otpauth://totp/${issuer}:${encodeURIComponent(email)}?secret=${secret}&issuer=${issuer}&algorithm=SHA1&digits=6&period=30`;
   }
 
@@ -1945,7 +1945,7 @@ export type Notice = Omit<typeof COLLECTION_NOTICE, 'title' | 'rights' | 'collec
 };
 
 export function defaultSettings(): OrgSettings {
-  return { orgName: 'FleetGuard', dpoContact: '', apps: [] };
+  return { orgName: 'Mob Hunter', dpoContact: '', apps: [] };
 }
 
 export type ComplianceIssue =

@@ -1,4 +1,4 @@
-package com.fleetguard.console
+package com.mobhunter.console
 
 import android.app.Activity
 import android.content.Intent
@@ -11,7 +11,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 
-/** Choose: connect to your organisation's FleetGuard server, or explore the offline demo. */
+/** Choose: connect to your organisation's Mob Hunter server, or explore the offline demo. */
 class ConnectionActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -25,8 +25,8 @@ class ConnectionActivity : Activity() {
         val col = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(pad, pad * 2, pad, pad)
-            addView(TextView(context).apply { text = "FleetGuard Console"; textSize = 24f; setTypeface(typeface, Typeface.BOLD) })
-            addView(TextView(context).apply { text = "Connect to your organisation's FleetGuard server. Only HTTPS servers are allowed."; setPadding(0, pad / 2, 0, pad / 2) })
+            addView(TextView(context).apply { text = "Mob Hunter Console"; textSize = 24f; setTypeface(typeface, Typeface.BOLD) })
+            addView(TextView(context).apply { text = "Connect to your organisation's Mob Hunter server. Only HTTPS servers are allowed."; setPadding(0, pad / 2, 0, pad / 2) })
             addView(input)
             addView(Button(context).apply {
                 text = "Connect"

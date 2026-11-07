@@ -1,6 +1,6 @@
 {
-  "name": "FleetGuard Console",
-  "short_name": "FleetGuard",
+  "name": "Mob Hunter Console",
+  "short_name": "Mob Hunter",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

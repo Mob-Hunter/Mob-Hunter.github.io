@@ -90,13 +90,13 @@ function Shell({ children }: { children: ReactNode }) {
           <span className="brand-mark" aria-hidden>
             ◈
           </span>
-          <span>FleetGuard</span>
+          <span>Mob Hunter</span>
           {rt.mode === 'demo' ? (
             <span className="env-pill" title="Runs entirely in your browser; no data leaves this device">
               Demo
             </span>
           ) : (
-            <span className="env-pill env-live" title={`Connected to the FleetGuard server v${rt.health.version}`}>
+            <span className="env-pill env-live" title={`Connected to the Mob Hunter server v${rt.health.version}`}>
               Live
             </span>
           )}

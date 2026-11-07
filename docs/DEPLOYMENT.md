@@ -1,4 +1,4 @@
-# Deploying FleetGuard to production
+# Deploying Mob Hunter to production
 
 Do this only after the governance gate in [GOVERNANCE.md](GOVERNANCE.md#go-live-gate) is met.
 
@@ -16,7 +16,7 @@ Edit `wrangler.toml` `[vars]`:
 | Variable | Value |
 |---|---|
 | `PUBLIC_URL` | The HTTPS origin, e.g. `https://fleet.example.com`. Use a custom domain on the Worker |
-| `APK_DOWNLOAD_URL` | HTTPS URL of the release-signed agent APK that Android downloads during QR provisioning. Default: `https://mob-hunter.github.io/downloads/fleetguard-agent.apk` (published by `pages.yml`) |
+| `APK_DOWNLOAD_URL` | HTTPS URL of the release-signed agent APK that Android downloads during QR provisioning. Default: `https://mob-hunter.github.io/downloads/mob-hunter-agent.apk` (published by `pages.yml`) |
 | `APK_SIGNATURE_CHECKSUM` | Output of `android/scripts/signature-checksum.sh` for your **release-signed** agent APK |
 | `ACCESS_TEAM_DOMAIN`, `ACCESS_AUD` | Optional. Enables "Sign in with company SSO" through Cloudflare Access |
 | `FCM_CLIENT_CONFIG` | Optional. Firebase client options so agents can receive push wakes |
@@ -32,13 +32,13 @@ npx wrangler secret put SIEM_WEBHOOK_SECRET    # optional: HMAC key for audit fo
 Build with the production URLs, then deploy:
 
 ```bash
-VITE_SERVER_URL=https://fleetguard.inbox-ashen.workers.dev VITE_DOWNLOADS_URL=https://mob-hunter.github.io/downloads npm run build
+VITE_SERVER_URL=https://mob-hunter.inbox-ashen.workers.dev VITE_DOWNLOADS_URL=https://mob-hunter.github.io/downloads npm run build
 npx wrangler deploy
 ```
 
-For CI deploys, add the repository secrets `CLOUDFLARE_API_TOKEN` (a token with *Workers Scripts: Edit*) and `CLOUDFLARE_ACCOUNT_ID`. `deploy-worker.yml` then deploys on every push to `main` and checks `/api/health`. If you move to your own domain, set the repository variable `FLEETGUARD_SERVER_URL` and `PUBLIC_URL` to match.
+For CI deploys, add the repository secrets `CLOUDFLARE_API_TOKEN` (a token with *Workers Scripts: Edit*) and `CLOUDFLARE_ACCOUNT_ID`. `deploy-worker.yml` then deploys on every push to `main` and checks `/api/health`. If you move to your own domain, set the repository variable `MOBHUNTER_SERVER_URL` and `PUBLIC_URL` to match.
 
-Open `PUBLIC_URL`. The console shows **Set up FleetGuard**. Enter the bootstrap token and create the first Super Admin, then scan the authenticator QR. After that, bootstrap is permanently disabled.
+Open `PUBLIC_URL`. The console shows **Set up Mob Hunter**. Enter the bootstrap token and create the first Super Admin, then scan the authenticator QR. After that, bootstrap is permanently disabled.
 
 ### Recommended hardening
 
