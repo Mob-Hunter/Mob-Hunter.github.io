@@ -174,6 +174,13 @@ export function createApp(cfg: HttpConfig) {
     const b = await body<{ patch: Parameters<Backend['updatePolicy']>[2]; justification: string }>(c);
     return c.json(await c.var.backend.updatePolicy(c.var.sid, c.req.param('id'), b.patch ?? {}, b.justification));
   });
+  app.post('/admin/devices/:id/incidents', async (c) => c.json(await c.var.backend.reportIncident(c.var.sid, c.req.param('id'), await body(c)), 201));
+  app.get('/admin/incidents', (c) => c.json(c.var.backend.listIncidents(c.var.sid)));
+  app.get('/admin/incidents/:id/track', async (c) => c.json(await c.var.backend.trackIncident(c.var.sid, c.req.param('id'))));
+  app.post('/admin/incidents/:id/tracking', async (c) => c.json(await c.var.backend.updateIncidentTracking(c.var.sid, c.req.param('id'), await body(c))));
+  app.post('/admin/incidents/:id/resolve', async (c) => c.json(await c.var.backend.resolveIncident(c.var.sid, c.req.param('id'), await body(c))));
+  app.post('/admin/devices/:id/cancel-removal', async (c) => c.json(await c.var.backend.cancelRemoval(c.var.sid, c.req.param('id'))));
+  app.post('/admin/devices/:id/delete', async (c) => c.json(await c.var.backend.deleteDevice(c.var.sid, c.req.param('id'), await body(c))));
   app.post('/admin/devices/:id/retire', async (c) => c.json(await c.var.backend.retireDevice(c.var.sid, c.req.param('id'), (await body<{ reason: string }>(c)).reason)));
   app.post('/admin/devices/:id/commands', async (c) => {
     const b = await body<{ type: string; ticket?: string; reason?: string; params?: Record<string, unknown> }>(c);
@@ -194,9 +201,19 @@ export function createApp(cfg: HttpConfig) {
   app.get('/admin/enrollments', (c) => c.json(c.var.backend.listEnrollments(c.var.sid)));
 
   // location
-  app.get('/admin/location-results', async (c) =>
-    c.json(await c.var.backend.listLocationResults(c.var.sid, { deviceId: c.req.query('deviceId') ?? undefined, ticket: c.req.query('ticket') ?? '' })),
-  );
+  app.get('/admin/location-results', async (c) => {
+    const tier = Number(c.req.query('tier'));
+    return c.json(
+      await c.var.backend.listLocationResults(c.var.sid, {
+        deviceId: c.req.query('deviceId') ?? undefined,
+        ticket: c.req.query('ticket') ?? '',
+        tier: tier === 1 || tier === 2 || tier === 3 ? tier : undefined,
+        sinceMs: Number(c.req.query('sinceMs')) || undefined,
+        onlyTicket: c.req.query('onlyTicket') === '1',
+      }),
+    );
+  });
+  app.get('/admin/location-tickets', (c) => c.json(c.var.backend.listLocationTickets(c.var.sid)));
   app.post('/admin/location-purge', async (c) => c.json({ purged: await c.var.backend.purgeNow(c.var.sid) }));
 
   // audit

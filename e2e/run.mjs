@@ -95,7 +95,7 @@ try {
   ok('install link is single-use (shows "already used")');
 
   await page.getByRole('link', { name: 'Devices', exact: true }).click();
-  await page.getByLabel('New / unnamed only').check();
+  await page.getByRole('tab', { name: /Unnamed/ }).click();
   await page.waitForURL(/unnamed=1/);
   await page.getByText('Unnamed device').first().waitFor();
   const unnamedCount = await page.locator('.device-list li').count();
@@ -103,7 +103,7 @@ try {
   await page.locator('.device-list li').first().getByLabel('New device name').fill('Kavya sales phone');
   await page.locator('.device-list li').first().getByRole('button', { name: 'Save' }).click();
   await page.locator('.toast-ok', { hasText: 'renamed' }).waitFor();
-  await page.getByLabel('New / unnamed only').uncheck();
+  await page.getByRole('tab', { name: /^All/ }).click();
   await page.getByRole('link', { name: 'Kavya sales phone' }).waitFor();
   ok('new device appeared as "Unnamed device" and was renamed inline');
 
@@ -139,12 +139,13 @@ try {
   await page.locator('td', { hasText: 'succeeded' }).first().waitFor({ timeout: 10_000 });
   ok('LOCATE signed → relay → push wake → device pulled, verified, replied');
   await page.getByLabel('Ticket justifying this view').fill('INC-2041');
-  await page.getByRole('button', { name: 'Show locations' }).click();
+  await page.getByRole('button', { name: 'Show location', exact: true }).click();
   await page.getByRole('img', { name: /Map with 1 location fixes/ }).waitFor();
-  ok('location result decrypted and plotted for the Location Operator');
+  await page.getByText('Last position').waitFor();
+  ok('location result decrypted, summarised and plotted for the Location Operator');
 
   await page.getByRole('link', { name: /Device simulator/ }).click();
-  const notif = page.locator('.notif', { hasText: 'Your device location was requested' }).first();
+  const notif = page.locator('.notif', { hasText: 'Your device location was requested' }).filter({ hasText: 'INC-2041' }).first();
   await notif.waitFor();
   assert.match(await notif.textContent(), /INC-2041/);
   ok('phone showed the mandatory location notification with the ticket');
@@ -162,6 +163,38 @@ try {
   await t.getByText('INC-2041').first().waitFor();
   await t.close();
   ok('employee transparency page lists the request');
+
+  await page.getByRole('link', { name: /Locations/ }).click();
+  await page.getByRole('heading', { name: 'Locations', exact: true }).waitFor();
+  await page.locator('tr', { hasText: 'INC-1001' }).getByRole('button', { name: 'View' }).click();
+  await page.getByRole('img', { name: /Map with 2 location fixes/ }).waitFor();
+  assert.ok(await page.locator('.list li', { hasText: "Nimal's field phone" }).count() > 0);
+  assert.ok((await page.locator('table tbody tr', { hasText: 'INC-1001' }).count()) >= 2);
+  ok('Locations workspace: seeded ticket INC-1001 shows fleet map, latest position per device and history');
+
+  // Lost / stolen incident with active tracking
+  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Devices', exact: true }).click();
+  await page.getByRole('heading', { name: 'Devices', exact: true }).waitFor();
+  await page.getByRole('link', { name: "Nimal's field phone" }).click();
+  await page.getByRole('heading', { name: 'Report lost or stolen' }).waitFor();
+  await page.getByLabel('Report as').selectOption('stolen');
+  await page.getByLabel('Incident ticket').fill('INC-3001');
+  await page.getByLabel('Tracking interval').selectOption('60');
+  await page.getByLabel('Tracking duration').selectOption('4');
+  await page.getByLabel('What happened (justification for tracking)').fill('Phone taken from a parked car, police ref 2026/1123');
+  await page.getByRole('button', { name: /Report stolen & start tracking/ }).click();
+  await page.waitForURL(/#\/incidents\/inc_/);
+  await page.getByText(/Tracking every 1 min/).first().waitFor();
+  await page.getByText('Stolen device:').waitFor();
+  await page.getByRole('img', { name: /Live track with \d+ location fixes/ }).waitFor({ timeout: 30_000 });
+  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: /Lost & stolen/ }).click();
+  await page.getByRole('heading', { name: /Open incidents \(1\)/ }).waitFor();
+  await page.getByRole('link', { name: "Nimal's field phone" }).click();
+  await page.getByLabel('Outcome').selectOption('recovered');
+  await page.getByRole('button', { name: 'Close incident' }).click();
+  await page.locator('.toast-ok', { hasText: 'Lost Mode ended' }).waitFor();
+  await page.getByText(/Closed as/).waitFor({ timeout: 20_000 });
+  ok('stolen report → live tracking page with map → listed under Lost & stolen → closed as recovered');
   await signOut();
 
   // Audit chain verifies
@@ -215,6 +248,49 @@ try {
   await page.locator('.toast-ok', { hasText: 'Settings saved' }).waitFor();
   await page.getByText('Timesheets', { exact: true }).waitFor();
   ok('organisation settings saved; app catalogue shown');
+
+  // Device lifecycle end: retire, then delete (Super Admin) — and location is restricted for this role.
+  await page.getByRole('link', { name: 'Devices', exact: true }).click();
+  await page.getByRole('heading', { name: 'Devices', exact: true }).waitFor();
+  await page.getByRole('link', { name: 'Unnamed device' }).first().click();
+  await page.getByRole('heading', { name: 'Unnamed device' }).waitFor();
+  await page.getByText('Restricted.').waitFor();
+  const deviceUrl = page.url();
+  await page.getByLabel('Reason', { exact: true }).fill('Returned to IT stock, screen cracked');
+  await page.getByRole('button', { name: 'Retire', exact: true }).click();
+  await page.locator('.toast-ok', { hasText: 'retired' }).waitFor();
+  await page.getByLabel('Reason for deletion').fill('Disposed via certified e-waste, ref EW-221');
+  await page.getByLabel('Type "DELETE" to confirm').fill('DELETE');
+  await page.getByRole('button', { name: 'Delete permanently' }).click();
+  await page.waitForURL(/#\/devices$/);
+  await page.getByRole('tab', { name: /Retired/ }).click();
+  await page.getByText('No retired or wiped devices.').waitFor();
+  await page.goto(deviceUrl);
+  await page.getByRole('alert').filter({ hasText: 'Device not found' }).waitFor();
+  await page.getByRole('link', { name: /Audit log/ }).click();
+  await page.getByLabel('Filter audit rows').fill('device.deleted');
+  await page.locator('table.audit tbody tr', { hasText: 'device.deleted' }).first().waitFor();
+  ok('device retired, then permanently deleted with reason + typed confirmation; recorded in the audit log');
+
+  // Deleting an ACTIVE device: the agent releases management and uninstalls itself, then the record is deleted.
+  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Devices', exact: true }).click();
+  await page.getByRole('heading', { name: 'Devices', exact: true }).waitFor();
+  await page.getByRole('link', { name: 'Kavya sales phone' }).click();
+  await page.getByRole('heading', { name: 'Kavya sales phone' }).waitFor();
+  await page.getByLabel('Reason for deletion').fill('Employee left; phone kept as personal');
+  await page.getByLabel('Type "DELETE" to confirm').fill('DELETE');
+  await page.getByRole('button', { name: 'Uninstall agent & delete' }).click();
+  await page.locator('.toast-ok', { hasText: 'uninstall itself' }).waitFor();
+  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Devices', exact: true }).click();
+  await page.getByRole('heading', { name: 'Devices', exact: true }).waitFor();
+  await page.waitForFunction(() => ![...document.querySelectorAll('.device-name')].some((a) => a.textContent === 'Kavya sales phone'), null, { timeout: 15_000 });
+  await page.getByRole('link', { name: /Device simulator/ }).click();
+  await page.getByText('Personal phone — not managed').first().waitFor();
+  await page.getByText('This phone is no longer managed').first().waitFor();
+  await page.getByRole('link', { name: /Audit log/ }).click();
+  await page.getByLabel('Filter audit rows').fill('device.released');
+  await page.locator('table.audit tbody tr', { hasText: 'device.released' }).first().waitFor();
+  ok('deleting an active device: agent released management and uninstalled itself, then the record was deleted');
 
   // No horizontal scroll at phone width
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);

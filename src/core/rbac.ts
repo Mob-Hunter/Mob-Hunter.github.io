@@ -23,6 +23,8 @@ export const COMMAND_TYPES = [
   'SYNC_POLICY',
   'INSTALL_APP',
   'REBOOT',
+  /** Remove management and uninstall the agent (sent only by the "delete device" flow). */
+  'RELEASE',
 ] as const;
 export type CommandType = (typeof COMMAND_TYPES)[number];
 
@@ -42,6 +44,7 @@ export type Permission =
   | 'sessions.manage'
   | 'employee.manage'
   | 'device.retire'
+  | 'device.delete'
   | 'apps.manage'
   | 'settings.manage'
   | 'privacy.dsar'
@@ -67,6 +70,7 @@ export const PERMISSIONS: Record<Permission, readonly Role[]> = {
   'sessions.manage': ['SUPER_ADMIN', 'SECURITY'],
   'employee.manage': ['SUPER_ADMIN', 'DEVICE_ADMIN'],
   'device.retire': ['SUPER_ADMIN', 'DEVICE_ADMIN'],
+  'device.delete': ['SUPER_ADMIN', 'DEVICE_ADMIN'],
   'apps.manage': ['SUPER_ADMIN', 'DEVICE_ADMIN'],
   'settings.manage': ['SUPER_ADMIN'],
   // Data-subject access requests are handled by Security (acting for the DPO), never by the Location Operator.
@@ -80,6 +84,7 @@ export const PERMISSIONS: Record<Permission, readonly Role[]> = {
   'command.REBOOT': ['SUPER_ADMIN', 'DEVICE_ADMIN', 'HELPDESK'],
   'command.INSTALL_APP': ['SUPER_ADMIN', 'DEVICE_ADMIN'],
   'command.WIPE': ['SUPER_ADMIN', 'DEVICE_ADMIN'],
+  'command.RELEASE': ['SUPER_ADMIN', 'DEVICE_ADMIN'],
 };
 
 /** Commands that must carry a ticket reference (purpose limitation). */

@@ -67,8 +67,8 @@ class Agent(private val ctx: Context) {
         } catch (e: ApiException) {
             Log.w(TAG, "API error ${e.status} ${e.code}: ${e.message}")
             config.lastError = "${e.code}: ${e.message}"
-            if (e.status == 401 && e.message?.contains("revoked") == true) {
-                // Wiped or retired on the server: stop for good.
+            if (e.status == 401 && (e.message?.contains("revoked") == true || e.message?.contains("Unknown device") == true)) {
+                // Wiped, retired or deleted on the server: stop for good.
                 config.revoked = true
                 AgentService.stop(ctx)
             }
@@ -118,8 +118,9 @@ class Agent(private val ctx: Context) {
         if (!config.enrolled || config.acknowledgedAt == 0L) return
         val now = System.currentTimeMillis()
         val fixes = JSONArray()
-        if (config.lostMode && now - config.lastLostFixAt >= 5 * 60_000) {
-            val text = "Location shared with your organisation while Lost Mode is on."
+        val battery = runCatching { Telemetry.collect(ctx).optInt("batteryLevel", 100) }.getOrDefault(100)
+        if (config.lostMode && now - config.lastLostFixAt >= Tracking.lostFixIntervalMs(config.trackingIntervalSec, config.trackingUntil, now, battery) - 1000) {
+            val text = Tracking.noticeText(config, null)
             val shown = Notifier.post(ctx, Notifier.CH_LOST, "Lost Mode is on", text, ongoing = true, id = Notifier.ID_FOREGROUND)
             Locator.fix(ctx, 2, Locator.notificationProof(shown, Notifier.CH_LOST, text))?.let { fixes.put(it) }
             config.lastLostFixAt = now

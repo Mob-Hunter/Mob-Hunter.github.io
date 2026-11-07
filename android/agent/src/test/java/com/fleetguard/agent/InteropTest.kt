@@ -154,5 +154,22 @@ class InteropTest {
         val forged = ApiClient(creds) { m -> Hex.encode(Signature.getInstance("SHA256withECDSA").run { initSign(rogue.private); update(m.toByteArray()); sign() }) }
         val err = runCatching { forged.getJson("/v1/policy") }.exceptionOrNull()
         assertTrue("forged signature must be rejected, got $err", err is ApiException && err.status == 401)
+
+        // --- admin deletes the (active) device: the server sends a signed RELEASE for the agent to uninstall itself
+        val del = admin.call("POST", "/admin/devices/${creds.deviceId}/delete", JSONObject().put("reason", "Employee left; phone kept as personal").put("confirm", "DELETE")) as JSONObject
+        assertEquals("pending_removal", del.getString("status"))
+        val release = api.getArray("/v1/commands/pending")
+        assertEquals(1, release.length())
+        val rel = verifier.verify(release.getJSONObject(0))
+        assertTrue("agent must accept the signed RELEASE: $rel", rel is CommandVerifier.Result.Ok)
+        val relCmd = (rel as CommandVerifier.Result.Ok).payload
+        assertEquals("RELEASE", relCmd.getString("type"))
+        assertTrue(relCmd.getJSONObject("params").has("orgName"))
+        // what CommandExecutor does: report first, then Releaser lifts policy, drops device owner and uninstalls
+        api.post("/v1/commands/${relCmd.getString("id")}/result", JSONObject().put("status", "succeeded").put("detail", "interop release"))
+        val gone = runCatching { admin.call("GET", "/admin/devices/${creds.deviceId}") }.exceptionOrNull()
+        assertTrue("record must be deleted after the phone confirms, got $gone", gone?.message?.contains("404") == true)
+        val revoked = runCatching { api.getJson("/v1/policy") }.exceptionOrNull()
+        assertTrue("old credentials must be refused, got $revoked", revoked is ApiException && revoked.status == 401)
     }
 }

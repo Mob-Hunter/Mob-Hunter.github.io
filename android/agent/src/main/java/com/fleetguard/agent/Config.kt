@@ -40,6 +40,19 @@ class Config(context: Context) : DeviceCredentials {
     var lastLostFixAt: Long
         get() = p.getLong("lastLostFixAt", 0)
         set(v) = p.edit().putLong("lastLostFixAt", v).apply()
+    /** Active tracking of a lost/stolen incident: interval (s), end time and kind, from the signed LOST_MODE_ON. */
+    var trackingIntervalSec: Int
+        get() = p.getInt("trackingIntervalSec", 0)
+        set(v) = p.edit().putInt("trackingIntervalSec", v).apply()
+    var trackingUntil: Long
+        get() = p.getLong("trackingUntil", 0)
+        set(v) = p.edit().putLong("trackingUntil", v).apply()
+    var incidentKind: String? by pref("incidentKind")
+    var lastTrackingSyncAt: Long
+        get() = p.getLong("lastTrackingSyncAt", 0)
+        set(v) = p.edit().putLong("lastTrackingSyncAt", v).apply()
+    val trackingActive: Boolean get() = lostMode && trackingIntervalSec > 0 && System.currentTimeMillis() < trackingUntil
+
     var lastContinuousAt: Long
         get() = p.getLong("lastContinuousAt", 0)
         set(v) = p.edit().putLong("lastContinuousAt", v).apply()

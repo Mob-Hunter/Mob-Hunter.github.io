@@ -39,6 +39,29 @@ Reference law: Sri Lanka **Personal Data Protection Act No. 9 of 2022** (PDPA). 
 **Overcome it.** Purge location automatically after 30 days and keep audit records for 1 year. Set up a DSAR (access request) process with the DPO.
 **Built in:** location is stored encrypted with AES-256-GCM and purged after 30 days. The employee transparency page shows every request and every stored fix for their device.
 
+### Device deletion and the right to erasure
+Deleting a device record erases its command history and encrypted location data, which supports storage limitation and erasure requests. The append-only audit log is kept, with a snapshot of the deleted record, the reason and the actor, because accountability requires it. State this in the privacy notice.
+**Built in:** only Super Admin or Device Admin can delete. The device must already be retired or wiped, and deletion needs a reason plus a typed `DELETE`.
+
+### Releasing a phone when it is deleted
+Deleting an active device returns the phone to the employee as an unmanaged phone with the agent uninstalled. Make sure that is the intended outcome: for a company phone being returned, or one that might hold company data, **wipe** it instead.
+**Built in:** release needs Super Admin or Device Admin, a reason and a typed `DELETE`. The employee is told the phone is no longer managed, and the request, the phone's confirmation and the deletion are all audited. A pending release can be cancelled. If your policy demands it, add a second approver as is already done for WIPE; the hook is `DUAL_CONTROL` in `src/core/rbac.ts`.
+
+### Active tracking of lost or stolen devices
+High-frequency tracking is the most intrusive location feature, so it is tightly bounded.
+**Built in:**
+- Location Operator only, with a ticket and a written justification.
+- At most 72 hours at a time. The end time is signed into the command and enforced by the phone itself, and every extension needs a reason and is audited.
+- The employee sees a persistent notice saying how often and until when.
+- Low battery slows tracking to 5 minutes.
+- Fixes are filed under the incident's ticket. Live viewing sessions are audited.
+- The incident closes automatically if Lost Mode ends or the phone is wiped, retired or deleted.
+- For stolen phones the console warns staff to share the location with the police rather than attempt recovery themselves; tell staff this in your runbook too.
+
+### Purpose limitation for location views
+Viewing location under ticket X should show the fixes collected for ticket X, not everything.
+**Built in:** "Only fixes recorded under this ticket" is on by default. Lost Mode fixes are filed under the ticket that turned Lost Mode on. Widening a view is a deliberate choice, and the audit row records which filter was used.
+
 ### 7. Agent APK signing key = control of every phone (High)
 **Risk.** Whoever holds the agent's signing key can ship an "update" that every enrolled device-owner phone will accept.
 **Overcome it.** Generate the release keystore offline. Store it in a hardware security module or an offline vault with two named custodians, and give CI access only through encrypted secrets (`FG_KEYSTORE_*`). Never use the debug-signed evaluation APKs on staff phones. Record the key's fingerprint in the DPIA.

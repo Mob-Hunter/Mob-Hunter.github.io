@@ -2,7 +2,7 @@ import type { AuditRow } from './audit';
 import type { Sealed } from './crypto';
 import type { CommandType, Role } from './rbac';
 
-export type DeviceState = 'enrolled' | 'active' | 'lost' | 'wiped' | 'retired';
+export type DeviceState = 'enrolled' | 'active' | 'lost' | 'wiped' | 'retired' | 'released';
 export type Platform = 'android' | 'ios';
 
 export interface User {
@@ -119,6 +119,8 @@ export interface Device {
   policyAckVersion: string | null;
   pushToken: string;
   lostMode: boolean;
+  /** Set when an admin deletes an active device: the agent must release management and uninstall itself first. */
+  pendingRemoval?: { requestedBy: string; requestedAt: number; reason: string; commandId: string } | null;
   policy: DevicePolicy;
   /** random key embedded in on-device notifications; lets the employee open their own transparency page */
   transparencyKey: string;
@@ -206,6 +208,28 @@ export interface StoredLocation {
   sealed: Sealed;
 }
 
+/** A device reported lost or stolen, with time-boxed active tracking. */
+export interface Incident {
+  id: string;
+  deviceId: string;
+  kind: 'lost' | 'stolen';
+  ticket: string;
+  reason: string;
+  reportedBy: string;
+  startedAt: number;
+  /** fix interval while active tracking runs (60–300 s) */
+  trackingIntervalSec: number;
+  /** active tracking stops on the phone at this time (≤ 72 h from the last extension) */
+  trackingUntil: number;
+  status: 'active' | 'resolved';
+  resolution?: 'found' | 'recovered' | 'not_recovered' | 'false_alarm';
+  resolvedBy?: string;
+  resolvedAt?: number;
+  note?: string;
+  /** throttles "tracking viewed" audit rows: userId → last audited view */
+  viewAudit?: Record<string, number>;
+}
+
 export interface PushWake {
   id: string;
   deviceId: string;
@@ -239,6 +263,7 @@ export interface BackendState {
   audit: AuditRow[];
   lastPurgeAt: number | null;
   settings?: OrgSettings;
+  incidents?: Incident[];
 }
 
 export interface DeviceAuth {
