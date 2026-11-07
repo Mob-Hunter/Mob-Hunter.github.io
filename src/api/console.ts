@@ -20,6 +20,7 @@ export type InstallPageData = Awaited<ReturnType<Backend['installPage']>>;
 export type Enrollment = Awaited<ReturnType<Backend['createEnrollment']>>;
 export type PolicyPatch = Parameters<Backend['updatePolicy']>[2];
 export type LocationTicket = ReturnType<Backend['listLocationTickets']>[number];
+export type DeleteResult = Awaited<ReturnType<Backend['deleteDevice']>>;
 export type LocationFilter = { deviceId?: string; ticket: string; tier?: 1 | 2 | 3; sinceMs?: number; onlyTicket?: boolean };
 export type Health = { service: 'fleetguard'; mode: 'demo' | 'server'; version: string; needsBootstrap: boolean; sso: boolean };
 export type { ComplianceIssue, DeviceView, LocationView, Notice };
@@ -42,7 +43,8 @@ export interface ConsoleApi {
   updateDevice(id: string, patch: { label?: string | null; assignedUserId?: string | null }): Promise<DeviceView>;
   updatePolicy(id: string, patch: PolicyPatch, justification: string): Promise<DeviceView>;
   retireDevice(id: string, reason: string): Promise<DeviceView>;
-  deleteDevice(id: string, input: { reason: string; confirm: string }): Promise<{ deleted: string; commands: number; locations: number }>;
+  deleteDevice(id: string, input: { reason: string; confirm: string }): Promise<DeleteResult>;
+  cancelRemoval(id: string): Promise<DeviceView>;
   compliance(): Promise<{ deviceId: string; deviceName: string; issues: ComplianceIssue[] }[]>;
   // commands
   issueCommand(deviceId: string, input: { type: CommandType; ticket?: string; reason?: string; params?: Record<string, unknown> }): Promise<Command>;
@@ -142,6 +144,9 @@ export class LocalConsoleApi implements ConsoleApi {
   }
   deleteDevice(id: string, input: { reason: string; confirm: string }) {
     return this.b.deleteDevice(this.s, id, input);
+  }
+  cancelRemoval(id: string) {
+    return this.b.cancelRemoval(this.s, id);
   }
   async compliance() {
     return this.b.compliance(this.s);
@@ -310,7 +315,10 @@ export class RemoteConsoleApi implements ConsoleApi {
     return this.req<DeviceView>('POST', `/admin/devices/${encodeURIComponent(id)}/retire`, { reason });
   }
   deleteDevice(id: string, input: { reason: string; confirm: string }) {
-    return this.req<{ deleted: string; commands: number; locations: number }>('POST', `/admin/devices/${encodeURIComponent(id)}/delete`, input);
+    return this.req<DeleteResult>('POST', `/admin/devices/${encodeURIComponent(id)}/delete`, input);
+  }
+  cancelRemoval(id: string) {
+    return this.req<DeviceView>('POST', `/admin/devices/${encodeURIComponent(id)}/cancel-removal`, {});
   }
   compliance() {
     return this.req<{ deviceId: string; deviceName: string; issues: ComplianceIssue[] }[]>('GET', '/admin/compliance');

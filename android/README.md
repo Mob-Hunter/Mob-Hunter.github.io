@@ -59,6 +59,7 @@ A sideloaded agent (installed from the APK link) is an ordinary app without devi
 | Lost Mode | Full-screen lock-task screen with the message and phone number. It survives reboot and exits only when the server ends Lost Mode |
 | Install | Downloads an approved catalogue APK over HTTPS, checks its SHA-256, then installs it silently with PackageInstaller |
 | Wipe | Reports success first, destroys the key and config, then calls `wipeDevice`/`wipeData` |
+| Release (device deleted in the console) | Reports success first. Then it clears every user restriction, lock task, password complexity, auto-lock and the update window, stops its service and scheduled work, and erases its key and config. It tells the employee the phone is no longer managed, gives up device owner (`clearDeviceOwnerApp`) and deactivates its admin, then uninstalls itself with `PackageInstaller.uninstall`. A device-owner app can't uninstall itself while it is an admin, so ownership is released first. Where Android asks the user to confirm, the system prompt is shown, and offered again from a notification. The employee's data is not touched |
 | Not present | No remote shell, screen capture or accessibility service. No SMS, contacts, call log, media or storage permissions |
 
 ## Interop test (agent ↔ real server)

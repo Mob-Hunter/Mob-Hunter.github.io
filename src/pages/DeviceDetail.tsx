@@ -15,6 +15,7 @@ const COMMAND_HELP: Record<CommandType, string> = {
   SYNC_POLICY: 'Device pulls and applies its current policy.',
   INSTALL_APP: 'Silently installs a company app by package name.',
   REBOOT: 'Reboots the device.',
+  RELEASE: 'Removes management and uninstalls the agent — sent by “Delete device”.',
 };
 
 export function DeviceDetailPage() {
@@ -28,7 +29,8 @@ export function DeviceDetailPage() {
   const canDelete = useCan('device.delete');
   if (err && !device) return <ErrorBox>{err}</ErrorBox>;
   if (!device) return null;
-  const allowed = COMMAND_TYPES.filter((t) => can(me.role, `command.${t}`));
+  // RELEASE is only sent by the delete flow, never from the generic command form.
+  const allowed = COMMAND_TYPES.filter((t) => t !== 'RELEASE' && can(me.role, `command.${t}`));
 
   return (
     <div className="page">
@@ -139,7 +141,7 @@ export function DeviceDetailPage() {
       <PolicyCard deviceId={device.id} policy={device.policy} />
       <DeviceLocationPanel deviceId={device.id} commands={commands} lostMode={device.lostMode} />
       {canRetire && device.state !== 'retired' && device.state !== 'wiped' && <RetireCard deviceId={device.id} />}
-      {canDelete && (device.state === 'retired' || device.state === 'wiped') && <DeleteCard deviceId={device.id} name={device.displayName} />}
+      {canDelete && (device.pendingRemoval ? <RemovalPendingCard device={device} /> : <DeleteCard deviceId={device.id} name={device.displayName} state={device.state} />)}
     </div>
   );
 }
@@ -347,41 +349,78 @@ function RetireCard({ deviceId }: { deviceId: string }) {
   );
 }
 
-/** Permanent removal of a retired/wiped device record (audited; the audit log keeps a snapshot). */
-function DeleteCard({ deviceId, name }: { deviceId: string; name: string }) {
+/** Deleting a device: an active phone first releases management and uninstalls the agent; a retired/wiped one is deleted at once. */
+function DeleteCard({ deviceId, name, state }: { deviceId: string; name: string; state: string }) {
   const rt = useRuntime();
   const nav = useNavigate();
   const [reason, setReason] = useState('');
   const [confirm, setConfirm] = useState('');
   const { run, busy } = useAction();
+  const managed = state === 'enrolled' || state === 'active' || state === 'lost';
   return (
-    <Card title="Delete device record" className="danger-zone">
-      <p className="small">
-        Permanently removes <strong>{name}</strong> from the console, with its command history and encrypted location data. This cannot be undone. The audit log keeps a
-        record of what was deleted, by whom and why.
-      </p>
+    <Card title="Delete device" className="danger-zone">
+      {managed ? (
+        <div className="small stack">
+          <p>
+            Deleting <strong>{name}</strong> removes it from management. The phone receives a signed command, lifts every restriction, tells the employee it is no longer
+            managed, gives up device-owner rights and <strong>uninstalls the FleetGuard agent</strong>. The record is deleted once the phone confirms.
+          </p>
+          <p className="muted">
+            Nothing on the phone is wiped — the employee keeps it with their data. To erase it instead, use WIPE. If the phone is lost or never comes back online, retire it.
+          </p>
+        </div>
+      ) : (
+        <p className="small">
+          Permanently removes <strong>{name}</strong> from the console, with its command history and encrypted location data. The agent is already gone or unreachable (
+          {state}). The audit log keeps a record of what was deleted, by whom and why.
+        </p>
+      )}
       <form
         className="row-form"
         onSubmit={(e) => {
           e.preventDefault();
           void run(async () => {
             const r = await rt.api.deleteDevice(deviceId, { reason, confirm });
-            rt.forgetDevice(deviceId);
-            nav('/devices', { replace: true });
+            if (r.status === 'deleted') {
+              rt.forgetDevice(deviceId);
+              nav('/devices', { replace: true });
+            }
+            setReason('');
+            setConfirm('');
             return r;
-          }, 'Device deleted (recorded in the audit log)');
+          }, managed ? 'Removal sent — the agent will uninstall itself and the record will be deleted' : 'Device deleted (recorded in the audit log)');
         }}
       >
         <Field label="Reason for deletion">
-          <input value={reason} onChange={(e) => setReason(e.target.value)} required minLength={5} placeholder="e.g. Disposed via certified e-waste, ref EW-221" />
+          <input value={reason} onChange={(e) => setReason(e.target.value)} required minLength={5} placeholder={managed ? 'e.g. Employee left, phone kept as personal' : 'e.g. Disposed via certified e-waste, ref EW-221'} />
         </Field>
         <Field label='Type "DELETE" to confirm'>
           <input value={confirm} onChange={(e) => setConfirm(e.target.value)} required autoComplete="off" />
         </Field>
         <button className="btn btn-danger" disabled={busy || confirm !== 'DELETE'}>
-          Delete permanently
+          {managed ? 'Uninstall agent & delete' : 'Delete permanently'}
         </button>
       </form>
+    </Card>
+  );
+}
+
+function RemovalPendingCard({ device }: { device: import('../core/backend').DeviceView }) {
+  const rt = useRuntime();
+  const { run, busy } = useAction();
+  const [users] = useQuery((api) => api.listUsers(), [], { live: false });
+  const pr = device.pendingRemoval!;
+  const who = users?.find((u) => u.id === pr.requestedBy)?.name ?? 'an administrator';
+  return (
+    <Card title="Removal pending" className="danger-zone">
+      <p className="small">
+        Requested {fmtAgo(pr.requestedAt)} by {who}: “{pr.reason}”. Waiting for <strong>{device.displayName}</strong> to come online, release management and uninstall the
+        agent — then the record is deleted automatically. The command is re-signed for as long as it takes.
+      </p>
+      <p className="small muted">If the phone is lost or will never come back online, retire it (revokes access at once) and delete the record.</p>
+      <button className="btn" disabled={busy} onClick={() => void run(() => rt.api.cancelRemoval(device.id), 'Removal cancelled — the device stays managed')}>
+        Cancel removal
+      </button>
     </Card>
   );
 }

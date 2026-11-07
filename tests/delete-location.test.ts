@@ -12,14 +12,13 @@ describe('device deletion', () => {
     await agent.poll();
     expect(backend.locationCount()).toBe(1);
 
-    await expect(backend.deleteDevice(admin, deviceId, { reason: 'cleanup old', confirm: 'DELETE' })).rejects.toMatchObject({ status: 409, code: 'device_active' });
     await backend.retireDevice(admin, deviceId, 'Returned by leaver');
     await expect(backend.deleteDevice(admin, deviceId, { reason: 'x', confirm: 'DELETE' })).rejects.toMatchObject({ code: 'reason_required' });
     await expect(backend.deleteDevice(admin, deviceId, { reason: 'Disposed via e-waste', confirm: 'delete' })).rejects.toMatchObject({ code: 'confirm_required' });
 
     const r = await backend.deleteDevice(admin, deviceId, { reason: 'Disposed via e-waste', confirm: 'DELETE' });
-    expect(r).toMatchObject({ deleted: deviceId, locations: 1 });
-    expect(r.commands).toBeGreaterThanOrEqual(1);
+    expect(r).toMatchObject({ status: 'deleted', deleted: deviceId, locations: 1 });
+    expect(r.status === 'deleted' && r.commands).toBeGreaterThanOrEqual(1);
     expect(backend.listDevices(admin).find((d) => d.id === deviceId)).toBeUndefined();
     expect(backend.listCommands(admin, deviceId)).toEqual([]);
     expect(backend.locationCount()).toBe(0);
@@ -106,5 +105,58 @@ describe('purpose limitation', () => {
     const lost = await backend.listLocationResults(op2, { ticket: 'INC-32', onlyTicket: true });
     expect(lost).toHaveLength(2);
     expect(lost.every((l) => l.tier === 2 && l.ticket === 'INC-32')).toBe(true);
+  });
+});
+
+describe('deleting an active device uninstalls the agent', () => {
+  it('sends a signed RELEASE; the phone uninstalls; the record is then deleted and the certificate revoked', async () => {
+    const { backend, signIn, enrolledAgent, store } = await setup();
+    const { agent, deviceId, admin } = await enrolledAgent();
+    await expect(backend.issueCommand(admin, deviceId, { type: 'RELEASE' })).rejects.toMatchObject({ code: 'use_delete' });
+    const r = await backend.deleteDevice(admin, deviceId, { reason: 'Employee left, phone kept as personal', confirm: 'DELETE' });
+    expect(r.status).toBe('pending_removal');
+    expect(backend.getDevice(admin, deviceId).pendingRemoval).toMatchObject({ reason: 'Employee left, phone kept as personal' });
+    await expect(backend.deleteDevice(admin, deviceId, { reason: 'again please', confirm: 'DELETE' })).rejects.toMatchObject({ code: 'removal_pending' });
+
+    const before = structuredClone(agent.state); // a copy of the agent as it was before uninstalling
+    expect(await agent.poll()).toEqual([expect.objectContaining({ type: 'RELEASE', outcome: 'succeeded' })]);
+    expect(agent.state.released).toBe(true);
+    expect(agent.state.keys).toBeUndefined();
+    expect(agent.state.notifications[0].title).toBe('This phone is no longer managed');
+    expect(backend.listDevices(admin).find((d) => d.id === deviceId)).toBeUndefined();
+    const sa = await signIn('SUPER_ADMIN');
+    const actions = backend.listAudit(sa).map((x) => x.action);
+    expect(actions).toEqual(expect.arrayContaining(['device.removal_requested', 'command.succeeded', 'device.released', 'device.deleted']));
+    const del = backend.listAudit(sa).find((x) => x.action === 'device.deleted')!;
+    expect(del.actor).toBe(backend.me(admin).id);
+    expect(del.detail).toMatchObject({ how: 'agent released management and uninstalled' });
+    expect(JSON.stringify(store.load()!.devices)).not.toContain(deviceId);
+    const { SimulatedAgent } = await import('../src/core/agent');
+    await expect(new SimulatedAgent(before, backend).checkin()).rejects.toMatchObject({ status: 401 });
+  });
+
+  it('re-signs the RELEASE for a phone that was offline past the 10-minute command lifetime', async () => {
+    const { backend, enrolledAgent, clock, signIn } = await setup();
+    const { agent, deviceId, admin } = await enrolledAgent();
+    const r = await backend.deleteDevice(admin, deviceId, { reason: 'Phone handed back to the employee', confirm: 'DELETE' });
+    clock.advance(3 * 3600_000); // offline for hours
+    expect(await agent.poll()).toEqual([expect.objectContaining({ type: 'RELEASE', outcome: 'succeeded' })]);
+    expect(r.status === 'pending_removal' && r.commandId).toBeTruthy();
+    const fresh = await signIn('DEVICE_ADMIN');
+    await expect(Promise.resolve().then(() => backend.getDevice(fresh, deviceId))).rejects.toMatchObject({ status: 404 });
+  });
+
+  it('a pending removal can be cancelled; retiring also clears it', async () => {
+    const { backend, enrolledAgent } = await setup();
+    const { agent, deviceId, admin } = await enrolledAgent();
+    await backend.deleteDevice(admin, deviceId, { reason: 'Wrong device selected', confirm: 'DELETE' });
+    expect((await backend.cancelRemoval(admin, deviceId)).pendingRemoval).toBeNull();
+    expect(await agent.poll()).toEqual([]);
+    expect(agent.state.released).toBeFalsy();
+    await backend.deleteDevice(admin, deviceId, { reason: 'Second attempt now', confirm: 'DELETE' });
+    await backend.retireDevice(admin, deviceId, 'Phone lost, never came back online');
+    expect(backend.getDevice(admin, deviceId).pendingRemoval).toBeNull();
+    const r = await backend.deleteDevice(admin, deviceId, { reason: 'Clean up retired record', confirm: 'DELETE' });
+    expect(r.status).toBe('deleted');
   });
 });

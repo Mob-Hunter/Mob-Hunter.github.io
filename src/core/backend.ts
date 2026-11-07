@@ -773,6 +773,7 @@ export class Backend {
   async pendingCommands(auth: DeviceAuth): Promise<SignedCommand[]> {
     const d = await this.authenticateDevice('GET', '/v1/commands/pending', null, auth);
     return withDeviceLock(d.id, async () => {
+      await this.refreshPendingRemoval(d);
       const relay = this.relayFor(d.id);
       const out = relay.pull(this.clock());
       d.lastCheckinAt = this.clock();
@@ -813,6 +814,17 @@ export class Backend {
       cmd.resultSummary = summary;
       this.relayFor(d.id).complete(cmd.id);
       await this.audit.append({ at: now, actor: d.id, actorRole: 'DEVICE', action: `command.${status}`, target: d.id, ticket: cmd.ticket, detail: { commandId: cmd.id, type: cmd.type } });
+      if (cmd.type === 'RELEASE') {
+        if (status === 'succeeded' && d.pendingRemoval) {
+          const req = d.pendingRemoval;
+          const actor = this.state.users.find((u) => u.id === req.requestedBy);
+          this.audit.append({ at: now, actor: d.id, actorRole: 'DEVICE', action: 'device.released', target: d.id, detail: { detail: summary } });
+          this.eraseDevice(d, { id: req.requestedBy, role: actor?.role ?? 'SYSTEM' }, req.reason, 'agent released management and uninstalled');
+        } else if (status !== 'succeeded') {
+          // The phone refused or failed: keep the record, surface it, let the admin decide (retry, retire or wipe).
+          d.pendingRemoval = null;
+        }
+      }
       this.persist();
       return { ok: true as const };
     });
@@ -881,6 +893,12 @@ export class Backend {
         d.lostMode = false;
         this.state.relayQueues[d.id] = [];
         break;
+      case 'RELEASE':
+        // The agent has removed management and is uninstalling itself: revoke the certificate.
+        d.state = 'released';
+        d.lostMode = false;
+        this.state.relayQueues[d.id] = [];
+        break;
       default:
         break;
     }
@@ -897,6 +915,7 @@ export class Backend {
   async issueCommand(sessionId: string, deviceId: string, input: { type: CommandType; ticket?: string; reason?: string; params?: Record<string, unknown> }): Promise<CommandRecord> {
     const { user } = this.requireSession(sessionId);
     if (!isCommandType(input.type)) throw new ApiError(422, 'invalid_command', 'Unknown command type');
+    if (input.type === 'RELEASE') throw new ApiError(422, 'use_delete', 'Removing management is done by deleting the device');
     this.guard(user, `command.${input.type}`);
     const d = this.findDevice(deviceId);
     if (d.state === 'wiped' || d.state === 'retired') throw new ApiError(409, 'device_inactive', 'Device is wiped or retired');
@@ -1069,15 +1088,81 @@ export class Backend {
    * encrypted location data are erased; the append-only audit log keeps a
    * snapshot of what was deleted, by whom and why.
    */
-  async deleteDevice(sessionId: string, deviceId: string, input: { reason: string; confirm: string }): Promise<{ deleted: string; commands: number; locations: number }> {
+  async deleteDevice(
+    sessionId: string,
+    deviceId: string,
+    input: { reason: string; confirm: string },
+  ): Promise<{ status: 'deleted'; deleted: string; commands: number; locations: number } | { status: 'pending_removal'; commandId: string }> {
     const { user } = this.requireSession(sessionId);
     this.guard(user, 'device.delete');
     const d = this.findDevice(deviceId);
-    if (d.state !== 'retired' && d.state !== 'wiped') {
-      throw new ApiError(409, 'device_active', 'Retire or wipe the device before deleting it, so no managed phone is left orphaned');
-    }
     if (!input?.reason || input.reason.trim().length < 5) throw new ApiError(422, 'reason_required', 'Give a reason for deleting the device');
     if (input.confirm !== 'DELETE') throw new ApiError(422, 'confirm_required', 'Type DELETE to confirm');
+    const reason = input.reason.trim().slice(0, 300);
+
+    // Still managed and reachable: the agent must release the phone and uninstall itself first.
+    if (d.state === 'enrolled' || d.state === 'active' || d.state === 'lost') {
+      if (d.pendingRemoval) throw new ApiError(409, 'removal_pending', 'Removal already requested — waiting for the phone to uninstall the agent');
+      const cmd: CommandRecord = {
+        id: randomId('cmd', 10),
+        deviceId: d.id,
+        type: 'RELEASE',
+        params: { orgName: this.state.settings!.orgName },
+        reason,
+        issuedBy: user.id,
+        issuedAt: this.clock(),
+        status: 'pending_approval',
+      };
+      this.state.commands.push(cmd);
+      this.commandsById.set(cmd.id, cmd);
+      d.pendingRemoval = { requestedBy: user.id, requestedAt: this.clock(), reason, commandId: cmd.id };
+      this.audit.append({ at: this.clock(), actor: user.id, actorRole: user.role, action: 'device.removal_requested', target: d.id, detail: { reason, commandId: cmd.id } });
+      await this.dispatch(cmd, d);
+      return { status: 'pending_removal', commandId: cmd.id };
+    }
+    // Retired, wiped or released: nothing left on the phone to talk to — delete now.
+    return { status: 'deleted', ...this.eraseDevice(d, { id: user.id, role: user.role }, reason, d.state) };
+  }
+
+  /** Cancels a removal that the phone has not completed (e.g. it is offline for good — then retire or wipe it). */
+  async cancelRemoval(sessionId: string, deviceId: string): Promise<DeviceView> {
+    const { user } = this.requireSession(sessionId);
+    this.guard(user, 'device.delete');
+    const d = this.findDevice(deviceId);
+    if (!d.pendingRemoval) throw new ApiError(409, 'no_removal', 'No removal is pending for this device');
+    const cmd = this.commandsById.get(d.pendingRemoval.commandId);
+    if (cmd && (cmd.status === 'queued' || cmd.status === 'delivered' || cmd.status === 'expired')) {
+      cmd.status = 'rejected';
+      cmd.completedAt = this.clock();
+      cmd.resultSummary = 'Removal cancelled by an administrator';
+      this.relayFor(d.id).complete(cmd.id);
+    }
+    d.pendingRemoval = null;
+    this.audit.append({ at: this.clock(), actor: user.id, actorRole: user.role, action: 'device.removal_cancelled', target: d.id });
+    this.persist();
+    return this.deviceView(d);
+  }
+
+  /**
+   * Keeps a pending removal alive while the phone is offline: commands expire after
+   * 10 minutes (non-negotiable), so the RELEASE command is re-signed with a fresh
+   * nonce and expiry when the phone next pulls. The phone never accepted the old
+   * envelope, so re-using the command id does not trip its replay protection.
+   */
+  private async refreshPendingRemoval(d: Device) {
+    const pr = d.pendingRemoval;
+    if (!pr) return;
+    const cmd = this.commandsById.get(pr.commandId);
+    if (!cmd) return;
+    const now = this.clock();
+    const stale = cmd.status === 'expired' || ((cmd.status === 'queued' || cmd.status === 'delivered') && cmd.envelope && now > cmd.envelope.payload.expiresAt - 30_000);
+    if (!stale) return;
+    cmd.envelope = await signCommand({ id: cmd.id, deviceId: d.id, type: cmd.type, params: cmd.params, ticket: cmd.ticket }, this.state.keys.commandSigning, now);
+    cmd.status = 'pending_approval';
+    this.relayFor(d.id).enqueue(cmd);
+  }
+
+  private eraseDevice(d: Device, actor: { id: string; role: string }, reason: string, how: string): { deleted: string; commands: number; locations: number } {
     const commands = this.state.commands.filter((c) => c.deviceId === d.id).length;
     const locations = this.state.locations.filter((l) => l.deviceId === d.id).length;
     this.state.devices = this.state.devices.filter((x) => x.id !== d.id);
@@ -1089,12 +1174,13 @@ export class Backend {
     this.state.wakes = this.state.wakes.filter((w) => w.deviceId !== d.id);
     this.audit.append({
       at: this.clock(),
-      actor: user.id,
-      actorRole: user.role,
+      actor: actor.id,
+      actorRole: actor.role,
       action: 'device.deleted',
       target: d.id,
       detail: {
-        reason: input.reason.trim().slice(0, 300),
+        reason,
+        how,
         snapshot: { label: d.label, serial: d.serial, model: d.model, state: d.state, enrolledAt: d.enrolledAt, certSerial: d.cert.serial, assignedUserId: d.assignedUserId },
         erased: { commands, locations },
       },
@@ -1396,6 +1482,7 @@ export class Backend {
     d.state = 'retired';
     d.lostMode = false;
     d.assignedUserId = null;
+    d.pendingRemoval = null;
     this.state.relayQueues[d.id] = [];
     for (const c of this.state.commands) if (c.deviceId === d.id && ['queued', 'delivered', 'pending_approval'].includes(c.status)) c.status = 'expired';
     this.audit.append({ at: this.clock(), actor: user.id, actorRole: user.role, action: 'device.retired', target: d.id, detail: { reason: reason.trim().slice(0, 300), certSerial: d.cert.serial } });

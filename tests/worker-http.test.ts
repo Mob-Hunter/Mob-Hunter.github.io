@@ -273,11 +273,12 @@ describe('Worker HTTP API', () => {
     expect((await ctx.admin('GET', '/admin/location-results?ticket=INC-55&tier=2', undefined, 'op')).json).toHaveLength(0);
     expect((await ctx.admin('GET', '/admin/location-results?ticket=INC-55&tier=1', undefined, 'op')).json).toHaveLength(1);
 
-    expect((await ctx.admin('POST', `/admin/devices/${id}/delete`, { reason: 'cleanup', confirm: 'DELETE' }, 'sa')).json.error).toBe('device_active');
-    await ctx.admin('POST', `/admin/devices/${id}/retire`, { reason: 'Returned to IT' }, 'sa');
-    const del = await ctx.admin('POST', `/admin/devices/${id}/delete`, { reason: 'Disposed securely', confirm: 'DELETE' }, 'sa');
+    // Active device: the server asks the phone to release management and uninstall first.
+    const del = await ctx.admin('POST', `/admin/devices/${id}/delete`, { reason: 'Employee left the company', confirm: 'DELETE' }, 'sa');
     expect(del.status).toBe(200);
-    expect(del.json).toMatchObject({ deleted: id, locations: 1 });
+    expect(del.json).toMatchObject({ status: 'pending_removal' });
+    expect((await ctx.admin('GET', `/admin/devices/${id}`, undefined, 'sa')).json.pendingRemoval).toMatchObject({ reason: 'Employee left the company' });
+    expect(await agent.poll()).toEqual([expect.objectContaining({ type: 'RELEASE', outcome: 'succeeded' })]);
     expect((await ctx.admin('GET', `/admin/devices/${id}`, undefined, 'sa')).status).toBe(404);
     expect((await ctx.admin('GET', '/admin/audit/verify', undefined, 'sa')).json.ok).toBe(true);
   });

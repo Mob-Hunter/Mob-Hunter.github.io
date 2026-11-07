@@ -43,6 +43,10 @@ Reference law: Sri Lanka **Personal Data Protection Act No. 9 of 2022** (PDPA). 
 Deleting a device record erases its command history and encrypted location data, which supports storage limitation and erasure requests. The append-only audit log is kept, with a snapshot of the deleted record, the reason and the actor, because accountability requires it. State this in the privacy notice.
 **Built in:** only Super Admin or Device Admin can delete. The device must already be retired or wiped, and deletion needs a reason plus a typed `DELETE`.
 
+### Releasing a phone when it is deleted
+Deleting an active device returns the phone to the employee as an unmanaged phone with the agent uninstalled. Make sure that is the intended outcome: for a company phone being returned, or one that might hold company data, **wipe** it instead.
+**Built in:** release needs Super Admin or Device Admin, a reason and a typed `DELETE`. The employee is told the phone is no longer managed, and the request, the phone's confirmation and the deletion are all audited. A pending release can be cancelled. If your policy demands it, add a second approver as is already done for WIPE; the hook is `DUAL_CONTROL` in `src/core/rbac.ts`.
+
 ### Purpose limitation for location views
 Viewing location under ticket X should show the fixes collected for ticket X, not everything.
 **Built in:** "Only fixes recorded under this ticket" is on by default. Lost Mode fixes are filed under the ticket that turned Lost Mode on. Widening a view is a deliberate choice, and the audit row records which filter was used.

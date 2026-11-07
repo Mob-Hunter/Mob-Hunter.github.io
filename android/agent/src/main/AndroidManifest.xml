@@ -12,6 +12,8 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- Lets the agent uninstall itself when the organisation deletes the device (RELEASE). -->
+    <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <!-- Deliberately ABSENT: SMS, contacts, call log, storage/media, accessibility, screen capture. -->
@@ -98,5 +100,6 @@
             </intent-filter>
         </receiver>
         <receiver android:name=".InstallResultReceiver" android:exported="false" />
+        <receiver android:name=".UninstallResultReceiver" android:exported="false" />
     </application>
 </manifest>

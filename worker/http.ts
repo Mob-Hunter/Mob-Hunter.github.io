@@ -174,6 +174,7 @@ export function createApp(cfg: HttpConfig) {
     const b = await body<{ patch: Parameters<Backend['updatePolicy']>[2]; justification: string }>(c);
     return c.json(await c.var.backend.updatePolicy(c.var.sid, c.req.param('id'), b.patch ?? {}, b.justification));
   });
+  app.post('/admin/devices/:id/cancel-removal', async (c) => c.json(await c.var.backend.cancelRemoval(c.var.sid, c.req.param('id'))));
   app.post('/admin/devices/:id/delete', async (c) => c.json(await c.var.backend.deleteDevice(c.var.sid, c.req.param('id'), await body(c))));
   app.post('/admin/devices/:id/retire', async (c) => c.json(await c.var.backend.retireDevice(c.var.sid, c.req.param('id'), (await body<{ reason: string }>(c)).reason)));
   app.post('/admin/devices/:id/commands', async (c) => {

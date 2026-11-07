@@ -2,7 +2,7 @@ import type { AuditRow } from './audit';
 import type { Sealed } from './crypto';
 import type { CommandType, Role } from './rbac';
 
-export type DeviceState = 'enrolled' | 'active' | 'lost' | 'wiped' | 'retired';
+export type DeviceState = 'enrolled' | 'active' | 'lost' | 'wiped' | 'retired' | 'released';
 export type Platform = 'android' | 'ios';
 
 export interface User {
@@ -119,6 +119,8 @@ export interface Device {
   policyAckVersion: string | null;
   pushToken: string;
   lostMode: boolean;
+  /** Set when an admin deletes an active device: the agent must release management and uninstall itself first. */
+  pendingRemoval?: { requestedBy: string; requestedAt: number; reason: string; commandId: string } | null;
   policy: DevicePolicy;
   /** random key embedded in on-device notifications; lets the employee open their own transparency page */
   transparencyKey: string;

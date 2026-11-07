@@ -78,6 +78,11 @@ class CommandExecutor(private val ctx: Context, private val config: Config, priv
                     result(id, "succeeded", "Rebooting")
                     dpm.reboot(admin)
                 }
+                "RELEASE" -> {
+                    // Report first: after this the agent and its credentials are gone.
+                    result(id, "succeeded", "Restrictions cleared, releasing device owner and uninstalling the agent")
+                    Releaser.release(ctx, config, params.optString("orgName", "Your organisation"))
+                }
                 "WIPE" -> {
                     // Report first: after the wipe there is no agent left to report.
                     result(id, "succeeded", "Factory reset initiated")

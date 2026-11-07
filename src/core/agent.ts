@@ -54,6 +54,8 @@ export interface AgentState {
   lastLostFixAt?: number;
   /** simulator setting: pull automatically when a push wake arrives */
   autoPull?: boolean;
+  /** management released and the agent uninstalled (RELEASE) */
+  released?: boolean;
 }
 
 export class PinMismatchError extends Error {
@@ -121,7 +123,7 @@ export class SimulatedAgent {
   }
 
   get enrolled(): boolean {
-    return !!this.state.deviceId && !this.state.wiped;
+    return !!this.state.deviceId && !this.state.wiped && !this.state.released;
   }
 
   private signer(): DeviceSigner {
@@ -310,6 +312,27 @@ export class SimulatedAgent {
         const pkg = String(p.params.packageName);
         if (!this.state.installedApps.includes(pkg)) this.state.installedApps.push(pkg);
         await this.postResult(p.id, { status: 'succeeded', detail: `Installed ${pkg}` });
+        return 'succeeded';
+      }
+      case 'RELEASE': {
+        // Report first: once uninstalled there is no agent left to report.
+        await this.postResult(p.id, { status: 'succeeded', detail: 'Restrictions cleared, device owner released, agent uninstalled' });
+        this.state.released = true;
+        this.state.lostMode = false;
+        this.state.locked = false;
+        this.state.notifications = [
+          {
+            id: randomId('n', 6),
+            at: this.clock(),
+            channel: 'management',
+            importance: 'low',
+            title: 'This phone is no longer managed',
+            text: `${String(p.params.orgName ?? 'Your organisation')} removed this phone from management. The management app has been uninstalled and nothing is collected any more.`,
+            persistent: false,
+          },
+        ];
+        this.state.keys = undefined;
+        this.log('Management released; agent uninstalled itself');
         return 'succeeded';
       }
       case 'WIPE':

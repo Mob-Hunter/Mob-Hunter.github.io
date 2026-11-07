@@ -42,7 +42,9 @@ Both modes run the same backend code (`src/core/backend.ts`), so every rule is t
 - Employees: add, import from HR CSV, leaver offboarding, and DSAR export (Security only, ticketed and audited).
 - Users and access: invite users with an authenticator QR, disable accounts, reset MFA, and list or revoke sessions.
 - Settings: organisation name and DPO contact (both shown in the employee notice), SIEM webhook, approved app catalogue, and change password.
-- Device lifecycle: retirement revokes the device's certificate immediately. **Deletion** permanently removes a retired or wiped device with its command history and encrypted location data. It needs a reason and a typed `DELETE`, and the audit log keeps a snapshot. Active devices can't be deleted, so no managed phone is left orphaned.
+- Device lifecycle: retirement revokes the device's certificate immediately. **Deleting** a device needs a reason and a typed `DELETE`, and the audit log keeps a snapshot of the record:
+  - **Active device:** the phone receives a signed RELEASE command. It lifts every restriction, tells the employee it is no longer managed, gives up device-owner rights and **uninstalls the agent** (nothing is wiped). The record, its command history and its encrypted location data are deleted when the phone confirms. The command is re-signed for phones that are offline longer than the 10-minute command lifetime, and a pending removal can be cancelled.
+  - **Retired or wiped device:** deleted at once.
 - Devices list: state tabs (active, awaiting acknowledgement, Lost Mode, unnamed, retired/wiped) and bulk actions (sync policy, lock, retire, delete).
 - **Location workspace** (Location Operator only):
   - a ticket index (ticket references and device names, never coordinates);

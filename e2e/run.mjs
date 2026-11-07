@@ -248,6 +248,26 @@ try {
   await page.locator('table.audit tbody tr', { hasText: 'device.deleted' }).first().waitFor();
   ok('device retired, then permanently deleted with reason + typed confirmation; recorded in the audit log');
 
+  // Deleting an ACTIVE device: the agent releases management and uninstalls itself, then the record is deleted.
+  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Devices', exact: true }).click();
+  await page.getByRole('heading', { name: 'Devices', exact: true }).waitFor();
+  await page.getByRole('link', { name: 'Kavya sales phone' }).click();
+  await page.getByRole('heading', { name: 'Kavya sales phone' }).waitFor();
+  await page.getByLabel('Reason for deletion').fill('Employee left; phone kept as personal');
+  await page.getByLabel('Type "DELETE" to confirm').fill('DELETE');
+  await page.getByRole('button', { name: 'Uninstall agent & delete' }).click();
+  await page.locator('.toast-ok', { hasText: 'uninstall itself' }).waitFor();
+  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Devices', exact: true }).click();
+  await page.getByRole('heading', { name: 'Devices', exact: true }).waitFor();
+  await page.waitForFunction(() => ![...document.querySelectorAll('.device-name')].some((a) => a.textContent === 'Kavya sales phone'), null, { timeout: 15_000 });
+  await page.getByRole('link', { name: /Device simulator/ }).click();
+  await page.getByText('Personal phone — not managed').first().waitFor();
+  await page.getByText('This phone is no longer managed').first().waitFor();
+  await page.getByRole('link', { name: /Audit log/ }).click();
+  await page.getByLabel('Filter audit rows').fill('device.released');
+  await page.locator('table.audit tbody tr', { hasText: 'device.released' }).first().waitFor();
+  ok('deleting an active device: agent released management and uninstalled itself, then the record was deleted');
+
   // No horizontal scroll at phone width
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   assert.ok(overflow <= 1, `horizontal overflow ${overflow}px`);

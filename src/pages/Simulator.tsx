@@ -87,6 +87,17 @@ function Phone({ agent }: { agent: SimulatedAgent }) {
               <p>Factory reset</p>
               <p className="tiny">Agent, keys and data erased.</p>
             </div>
+          ) : s.released ? (
+            <div className="shade">
+              <div className="shade-managed">Personal phone — not managed</div>
+              {s.notifications.slice(0, 2).map((n) => (
+                <div key={n.id} className="notif notif-low">
+                  <div className="notif-title">{n.title}</div>
+                  <div className="notif-text">{n.text}</div>
+                </div>
+              ))}
+              <p className="tiny center">FleetGuard agent uninstalled · restrictions removed · data kept</p>
+            </div>
           ) : !device ? (
             <div className="phone-center">Not enrolled</div>
           ) : !s.acknowledgedAt ? (
@@ -167,7 +178,7 @@ function Phone({ agent }: { agent: SimulatedAgent }) {
             </>
           )}
         </div>
-        {device && !s.wiped && (
+        {device && !s.wiped && !s.released && (
           <>
             <div className="btn-row">
               <button className="btn btn-sm" disabled={busy} onClick={() => void act(() => agent.checkin(), 'Checked in')}>

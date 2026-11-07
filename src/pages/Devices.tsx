@@ -3,25 +3,27 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { Badge, Card, Empty, ErrorBox, Field, fmtAgo, useAction, useCan, useQuery, useRuntime, useToast, errorText } from '../ui/kit';
 import type { DeviceView } from '../core/backend';
 
-export function stateBadge(d: Pick<DeviceView, 'state' | 'lostMode' | 'policyAckAt'>) {
+export function stateBadge(d: Pick<DeviceView, 'state' | 'lostMode' | 'policyAckAt'> & { pendingRemoval?: DeviceView['pendingRemoval'] }) {
   if (d.lostMode) return <Badge tone="bad">Lost Mode</Badge>;
   if (d.state === 'wiped') return <Badge tone="neutral">Wiped</Badge>;
   if (d.state === 'retired') return <Badge tone="neutral">Retired</Badge>;
+  if (d.state === 'released') return <Badge tone="neutral">Released</Badge>;
+  if (d.pendingRemoval) return <Badge tone="warn">Removal pending</Badge>;
   if (d.state === 'enrolled') return <Badge tone="warn">Awaiting notice ack</Badge>;
   return <Badge tone="ok">Active</Badge>;
 }
 
 type Tab = 'all' | 'active' | 'pending' | 'lost' | 'unnamed' | 'decommissioned';
 const TABS: { id: Tab; label: string; match: (d: DeviceView) => boolean }[] = [
-  { id: 'all', label: 'All', match: (d) => d.state !== 'retired' && d.state !== 'wiped' },
+  { id: 'all', label: 'All', match: (d) => d.state !== 'retired' && d.state !== 'wiped' && d.state !== 'released' },
   { id: 'active', label: 'Active', match: (d) => d.state === 'active' && !d.lostMode },
   { id: 'pending', label: 'Awaiting ack', match: (d) => d.state === 'enrolled' },
   { id: 'lost', label: 'Lost Mode', match: (d) => d.lostMode },
   { id: 'unnamed', label: 'Unnamed', match: (d) => !d.label && d.state !== 'retired' && d.state !== 'wiped' },
-  { id: 'decommissioned', label: 'Retired / wiped', match: (d) => d.state === 'retired' || d.state === 'wiped' },
+  { id: 'decommissioned', label: 'Retired / wiped', match: (d) => d.state === 'retired' || d.state === 'wiped' || d.state === 'released' },
 ];
 
-const isDecommissioned = (d: DeviceView) => d.state === 'retired' || d.state === 'wiped';
+const isDecommissioned = (d: DeviceView) => d.state === 'retired' || d.state === 'wiped' || d.state === 'released';
 
 export function DevicesPage() {
   const [params, setParams] = useSearchParams();
@@ -178,12 +180,7 @@ function BulkBar({ devices, onDone }: { devices: DeviceView[]; onDone: () => voi
             </button>
           )}
           {canDelete && (
-            <button
-              className="btn btn-sm btn-danger"
-              disabled={busy || dead.length === 0}
-              title={dead.length === 0 ? 'Only retired or wiped devices can be deleted' : undefined}
-              onClick={() => setMode('delete')}
-            >
+            <button className="btn btn-sm btn-danger" disabled={busy} onClick={() => setMode('delete')}>
               Delete…
             </button>
           )}
@@ -213,15 +210,25 @@ function BulkBar({ devices, onDone }: { devices: DeviceView[]; onDone: () => voi
           className="stack"
           onSubmit={(e) => {
             e.preventDefault();
-            void each('Deleted', dead, async (d) => {
-              await rt.api.deleteDevice(d.id, { reason, confirm });
-              rt.forgetDevice(d.id);
+            void each('Delete', devices.filter((d) => !d.pendingRemoval), async (d) => {
+              const r = await rt.api.deleteDevice(d.id, { reason, confirm });
+              if (r.status === 'deleted') rt.forgetDevice(d.id);
             });
           }}
         >
           <p className="small">
-            Permanently deletes <strong>{dead.length}</strong> retired/wiped device record(s), with their command history and encrypted location data. The audit log keeps a
-            record of the deletion. {live.length > 0 && <>{live.length} selected device(s) are still active and will be skipped — retire or wipe them first.</>}
+            {dead.length > 0 && (
+              <>
+                <strong>{dead.length}</strong> retired/wiped record(s) are deleted at once, with their command history and encrypted location data.{' '}
+              </>
+            )}
+            {live.length > 0 && (
+              <>
+                <strong>{live.length}</strong> active phone(s) will release management and <strong>uninstall the FleetGuard agent</strong> (nothing is wiped); each record is
+                deleted when its phone confirms.{' '}
+              </>
+            )}
+            The audit log keeps a record of every deletion.
           </p>
           <div className="row-form">
             <Field label="Reason">
@@ -231,7 +238,7 @@ function BulkBar({ devices, onDone }: { devices: DeviceView[]; onDone: () => voi
               <input value={confirm} onChange={(e) => setConfirm(e.target.value)} required autoComplete="off" />
             </Field>
             <button className="btn btn-danger" disabled={busy || confirm !== 'DELETE'}>
-              Delete {dead.length}
+              Delete {devices.length}
             </button>
           </div>
         </form>

@@ -23,6 +23,8 @@ export const COMMAND_TYPES = [
   'SYNC_POLICY',
   'INSTALL_APP',
   'REBOOT',
+  /** Remove management and uninstall the agent (sent only by the "delete device" flow). */
+  'RELEASE',
 ] as const;
 export type CommandType = (typeof COMMAND_TYPES)[number];
 
@@ -82,6 +84,7 @@ export const PERMISSIONS: Record<Permission, readonly Role[]> = {
   'command.REBOOT': ['SUPER_ADMIN', 'DEVICE_ADMIN', 'HELPDESK'],
   'command.INSTALL_APP': ['SUPER_ADMIN', 'DEVICE_ADMIN'],
   'command.WIPE': ['SUPER_ADMIN', 'DEVICE_ADMIN'],
+  'command.RELEASE': ['SUPER_ADMIN', 'DEVICE_ADMIN'],
 };
 
 /** Commands that must carry a ticket reference (purpose limitation). */
