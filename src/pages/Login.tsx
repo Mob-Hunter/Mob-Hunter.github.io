@@ -4,7 +4,7 @@ import { useMe, useRuntime, useNow, errorText, ErrorBox } from '../ui/kit';
 import { totp } from '../core/totp';
 import { ROLE_LABEL } from '../core/rbac';
 import { DEMO_PASSWORD } from '../runtime';
-import { MobileAppsCard } from './Settings';
+import { DOWNLOADS_URL } from '../config';
 
 function LiveCode({ secret }: { secret: string }) {
   const now = useNow(1000);
@@ -149,9 +149,11 @@ export function LoginPage() {
           </p>
         </div>
       )}
-      <div className="login-apps">
-        <MobileAppsCard />
-      </div>
+      {DOWNLOADS_URL && (
+        <p className="login-apps small center">
+          <Link to="/download">📱 Get the Android apps (QR codes)</Link>
+        </p>
+      )}
     </div>
   );
 }

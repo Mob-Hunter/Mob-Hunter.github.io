@@ -1,14 +1,12 @@
 # FleetGuard production backend on Cloudflare.
 # Deploy:  npm run build && npx wrangler deploy
 name = "fleetguard"
+workers_dev = true
+preview_urls = false
 main = "worker/index.ts"
 compatibility_date = "2026-10-01"
 
-[assets]
-directory = "./dist"
-binding = "ASSETS"
-not_found_handling = "single-page-application"
-run_worker_first = ["/api/*"]
+# The console is embedded in the Worker (scripts/embed-assets.mjs) — no static-assets upload needed.
 
 [[durable_objects.bindings]]
 name = "TENANT"
@@ -18,19 +16,22 @@ class_name = "TenantDO"
 tag = "v1"
 new_sqlite_classes = ["TenantDO"]
 
-[[r2_buckets]]
-binding = "APKS"
-bucket_name = "fleetguard-apks"
+# Optional: serve versioned agent APKs from R2 at /api/apk/<version> (enable R2, create the bucket, then uncomment).
+# [[r2_buckets]]
+# binding = "APKS"
+# bucket_name = "fleetguard-apks"
 
 [triggers]
 crons = ["17 3 * * *"]
 
 [vars]
 # Public HTTPS origin of this deployment, e.g. https://fleet.example.com
-PUBLIC_URL = ""
+PUBLIC_URL = "https://fleetguard.inbox-ashen.workers.dev"
 APK_VERSION = "1.0.0"
+# Where Android downloads the agent during QR provisioning (default: <PUBLIC_URL>/downloads/fleetguard-agent.apk)
+APK_DOWNLOAD_URL = "https://mob-hunter.github.io/downloads/fleetguard-agent.apk"
 # URL-safe base64 SHA-256 of the agent signing certificate (see android/README.md)
-APK_SIGNATURE_CHECKSUM = ""
+APK_SIGNATURE_CHECKSUM = "AGwwFGMsyDDzIquB8gN_uFlyFiwPD5ml7tnCxFeKa4c"
 # Optional Cloudflare Access SSO: team domain (team.cloudflareaccess.com) and application AUD tag
 ACCESS_TEAM_DOMAIN = ""
 ACCESS_AUD = ""

@@ -7,13 +7,22 @@ import react from '@vitejs/plugin-react';
  * delivered as a <meta> tag. Only applied to production builds (the dev server
  * needs inline scripts for hot reload).
  */
+const origin = (u?: string) => {
+  try {
+    return u ? new URL(u).origin : '';
+  } catch {
+    return '';
+  }
+};
+/** The console reads APK checksums from the downloads host (GitHub Pages) when it differs from its own origin. */
+const EXTRA_CONNECT = [origin(process.env.VITE_DOWNLOADS_URL), origin(process.env.VITE_SERVER_URL)].filter(Boolean).join(' ');
 const CSP = [
   "default-src 'self'",
   "script-src 'self'",
   "style-src 'self'",
   "img-src 'self' data:",
   "font-src 'self'",
-  "connect-src 'self'",
+  `connect-src 'self'${EXTRA_CONNECT ? ' ' + EXTRA_CONNECT : ''}`,
   "manifest-src 'self'",
   "object-src 'none'",
   "base-uri 'self'",

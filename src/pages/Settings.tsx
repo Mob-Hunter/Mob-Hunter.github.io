@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Card, Empty, ErrorBox, Field, useAction, useCan, useQuery, useRuntime } from '../ui/kit';
+import { ApkDownloads, downloadsBase } from './Download';
+import { DOWNLOADS_URL } from '../config';
 import type { AppCatalogEntry } from '../core/types';
 
 export function SettingsPage() {
@@ -164,41 +167,25 @@ function PasswordCard() {
   );
 }
 
-const APKS = [
-  { file: 'fleetguard-console.apk', name: 'FleetGuard Console', text: 'This console as an Android app — offline demo or connected to your server.' },
-  { file: 'fleetguard-agent.apk', name: 'FleetGuard device agent', text: 'Device-owner agent for company phones. Install through the provisioning QR on a factory-reset phone — not from this link.' },
-];
-
-/** Shows the Android downloads published next to the console (GitHub Pages / server build), if present. */
+/** Android apps with QR codes — shown when the build names a downloads location (VITE_DOWNLOADS_URL) and the APKs are published there. */
 export function MobileAppsCard() {
-  const [available, setAvailable] = useState<string[] | null>(null);
+  const [available, setAvailable] = useState<boolean | null>(null);
   useEffect(() => {
+    if (!DOWNLOADS_URL) return;
     let alive = true;
-    Promise.all(APKS.map((a) => fetch(`./downloads/${a.file}`, { method: 'HEAD' }).then((r) => (r.ok ? a.file : null), () => null))).then((r) => alive && setAvailable(r.filter((x): x is string => !!x)));
+    fetch(`${downloadsBase()}/SHA256SUMS.txt`, { method: 'HEAD', cache: 'no-store' }).then(
+      (r) => alive && setAvailable(r.ok),
+      () => alive && setAvailable(false),
+    );
     return () => {
       alive = false;
     };
   }, []);
-  if (!available?.length) return null;
+  if (!available) return null;
   return (
-    <Card title="Android apps">
-      <ul className="list">
-        {APKS.filter((a) => available.includes(a.file)).map((a) => (
-          <li key={a.file}>
-            <span>
-              <strong>{a.name}</strong>
-              <div className="small muted">{a.text}</div>
-            </span>
-            <a className="btn btn-sm" href={`./downloads/${a.file}`} download>
-              Download APK
-            </a>
-          </li>
-        ))}
-      </ul>
-      <p className="tiny muted">
-        SHA-256 checksums: <a href="./downloads/SHA256SUMS.txt">SHA256SUMS.txt</a>. Evaluation builds are signed with a debug key; production builds use your organisation&apos;s
-        signing key (see android/README.md).
-      </p>
+    <Card title="Android apps" actions={<Link to="/download">Open download page</Link>}>
+      <p className="small muted">Scan a QR code with the phone&apos;s camera to download, or share the download page link.</p>
+      <ApkDownloads compact />
     </Card>
   );
 }

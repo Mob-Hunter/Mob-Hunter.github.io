@@ -117,6 +117,7 @@ export interface BackendOptions {
   /** SHA-256 (URL-safe base64) of the agent APK signing certificate, for the provisioning QR */
   apkSignatureChecksum?: string;
   apkVersion?: string;
+  apkDownloadUrl?: string;
   /** called for every audit row (e.g. forward to a SIEM) */
   onAudit?: (row: AuditRow) => void;
 }
@@ -601,7 +602,7 @@ export class Backend {
       installPath: `/e/${token}`,
       expiresAt: rec.expiresAt,
       provisioning: await this.provisioningFor(token, opts.wifiSsid),
-      sideloadApkUrl: `${this.apiBaseUrl}/apk/1.0.0`,
+      sideloadApkUrl: this.opts.apkDownloadUrl || `${this.apiBaseUrl}/apk/1.0.0`,
     };
   }
 
@@ -613,6 +614,7 @@ export class Backend {
       wifi: wifiSsid ? { ssid: wifiSsid, security: 'WPA' } : undefined,
       apkVersion: this.opts.apkVersion,
       signatureChecksum: this.opts.apkSignatureChecksum,
+      apkDownloadUrl: this.opts.apkDownloadUrl,
     });
   }
 
@@ -633,7 +635,7 @@ export class Backend {
     if (!found) return { status: 'invalid' };
     if (found.usedAt) return { status: 'used' };
     if (found.expiresAt < this.clock()) return { status: 'expired' };
-    return { status: 'valid', expiresAt: found.expiresAt, provisioning: await this.provisioningFor(token), sideloadApkUrl: `${this.apiBaseUrl}/apk/1.0.0` };
+    return { status: 'valid', expiresAt: found.expiresAt, provisioning: await this.provisioningFor(token), sideloadApkUrl: this.opts.apkDownloadUrl || `${this.apiBaseUrl}/apk/1.0.0` };
   }
 
   /** POST /v1/enroll — exchanges the one-time token for a device id and a client certificate. */

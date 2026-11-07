@@ -9,16 +9,23 @@ FleetGuard manages company-owned Android phones (and, later, supervised iPhones)
 | **Device agent APK** | Kotlin device-owner agent (minSdk 30), with no launcher icon. It enrols with the provisioning QR, uses a P-256 key in the Android Keystore, verifies signed commands and posts the mandatory notifications | `android/agent` |
 | **Console APK** | The console as an Android app. It runs as an offline demo, or connects to your server | `android/console` |
 
-**Demo:** https://mob-hunter.github.io/. GitHub Pages runs the whole system in your browser with simulated phones. The Android APKs are published under *Settings → Android apps* once the Pages workflow has run.
+## Live
 
-> ⚠️ **GitHub Pages is a demo and evaluation host, not a production backend.** A static site can't keep secrets, terminate TLS for devices or send push messages. For real devices, deploy the server (see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)) and complete the [governance gate](docs/GOVERNANCE.md#go-live-gate).
+| | URL |
+|---|---|
+| **Console + API (production server)** | https://fleetguard.inbox-ashen.workers.dev |
+| **Landing page + Android downloads (QR codes)** | https://mob-hunter.github.io |
+
+- **GitHub Pages** hosts the public landing page. It shows a QR code that opens the console on the server, plus a QR code and download button for each **release-signed** APK, with its SHA-256. The same QR codes appear in the console under *Settings → Android apps* and on `#/download`.
+- The **server** is the Cloudflare Worker. It holds all data, secrets and keys. GitHub Pages can't keep secrets, so it never runs a backend.
+- Before real employee phones are enrolled, complete the [governance gate](docs/GOVERNANCE.md#go-live-gate).
 
 ## Modes
 
 The console works out how it is running at start-up:
 
 - **Server ("Live").** Served by the Worker, so `/api/health` answers. Every call goes to the real backend over HTTPS. The session lives in an HttpOnly, Secure, SameSite=Strict cookie, and requests also carry a CSRF header.
-- **Demo.** Served statically (GitHub Pages, or the console APK offline). The reference backend runs in the browser with seeded demo accounts and simulated phones. Nothing leaves the device.
+- **Demo.** A build without `VITE_SERVER_URL`, served statically (local `npm run dev`/`preview`, or the console APK offline when no server is built in). It is not published. The reference backend runs in the browser with seeded demo accounts and simulated phones. Nothing leaves the device.
 
 Both modes run the same backend code (`src/core/backend.ts`), so every rule is tested once and enforced identically.
 
@@ -77,7 +84,8 @@ npm run android          # agent unit tests + both release APKs (needs the Andro
 
 ## Deploy
 
-- **Demo site:** merge to `main`. `pages.yml` tests everything, builds the APKs and publishes the site to GitHub Pages, with the APKs under `/downloads/`. You need to set **Settings → Pages → Source: GitHub Actions** once.
+- **Landing page and APKs:** merge to `main`. `pages.yml` runs all the tests, makes the production build (`VITE_SERVER_URL`) and publishes it with the APKs under `/downloads/`. With the `FG_KEYSTORE_*` secrets set, it rebuilds and signs the APKs. Without them, it publishes the release-signed APKs committed in `releases/android/` (it checks their SHA-256 first). Debug-signed APKs are never published.
+- **Server:** `deploy-worker.yml` deploys the Worker on every push to `main` once the repository secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` are set. You can also deploy by hand with `npm run build && npx wrangler deploy`. The console is embedded in the Worker script (`scripts/embed-assets.mjs`), so deploying needs only *Workers Scripts: Edit* permission.
 - **Production server:** follow [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md). In short: `wrangler secret put BOOTSTRAP_TOKEN`, `npm run deploy`, open the URL and create the first Super Admin.
 - **APKs:** pushing a `v*` tag runs `release.yml`, which attaches signed APKs and checksums to a GitHub Release. See [android/README.md](android/README.md) for signing and enrolment.
 

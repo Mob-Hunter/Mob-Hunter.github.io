@@ -28,6 +28,14 @@ export FG_KEYSTORE_PATH=$PWD/fleetguard-release.jks FG_KEYSTORE_PASSWORD=… FG_
 
 In GitHub Actions, add the repository secrets `FG_KEYSTORE_BASE64` (`base64 -w0 fleetguard-release.jks`), `FG_KEYSTORE_PASSWORD`, `FG_KEY_ALIAS` and `FG_KEY_PASSWORD`. Keep the keystore offline and backed up. If it is lost, every enrolled device has to be re-enrolled before it can take agent updates.
 
+### Built-in server
+
+`FG_SERVER_URL=https://… ./gradlew :console:assembleRelease` (or `-PfgServerUrl=`) builds the console app connected to your server, with demo mode hidden. `pages.yml` does this with the live server URL.
+
+### Published APKs
+
+`releases/android/` holds the current release-signed APKs and `SHA256SUMS.txt`. Signer: `CN=FleetGuard Agent, O=Falcon 98 Corporation`, certificate SHA-256 `006c3014…6b87`. Provisioning checksum: `AGwwFGMsyDDzIquB8gN_uFlyFiwPD5ml7tnCxFeKa4c`. `pages.yml` publishes these when the signing secrets aren't set. After a rebuild with the key, replace them.
+
 ### Provisioning checksum
 
 ```bash
@@ -38,10 +46,10 @@ Put the output in `APK_SIGNATURE_CHECKSUM` in `wrangler.toml`. Android refuses t
 
 ## Enrolling a phone (device owner)
 
-1. Upload the release APK to R2 (see `docs/DEPLOYMENT.md`).
+1. Make sure the release-signed agent is published at `APK_DOWNLOAD_URL` (by default GitHub Pages: `https://mob-hunter.github.io/downloads/fleetguard-agent.apk`).
 2. In the console, go to **Add devices → Mint token + QR**.
 3. Factory-reset the phone. On the Welcome screen, **tap six times**, connect to Wi-Fi and scan the QR.
-4. Android downloads the agent from `/api/apk/<version>`, checks its signature checksum and makes it device owner.
+4. Android downloads the agent from `APK_DOWNLOAD_URL`, checks its signature checksum and makes it device owner.
 5. The agent's **policy-compliance screen** runs inside Setup. It generates the Keystore key, enrols, checks the server key against the pin in the QR, and shows the notice. Nothing is collected until the employee taps **I understand**.
 6. The phone appears in the console as **Unnamed device**. Rename it and assign it to an employee.
 

@@ -33,8 +33,10 @@ class MainActivity : Activity() {
     companion object {
         const val ASSET_ORIGIN = "https://appassets.androidplatform.net"
         const val DEMO_URL = "$ASSET_ORIGIN/assets/www/index.html"
-        fun serverUrl(ctx: Context): String? = ctx.getSharedPreferences("console", MODE_PRIVATE).getString("serverUrl", null)
-        fun chosen(ctx: Context): Boolean = ctx.getSharedPreferences("console", MODE_PRIVATE).getBoolean("chosen", false)
+        /** Built-in production server (set at build time), if any. */
+        fun defaultServer(ctx: Context): String? = ctx.getString(R.string.default_server_url).trim().trimEnd('/').takeIf { it.startsWith("https://") }?.let { "$it/" }
+        fun serverUrl(ctx: Context): String? = ctx.getSharedPreferences("console", MODE_PRIVATE).getString("serverUrl", null) ?: defaultServer(ctx)
+        fun chosen(ctx: Context): Boolean = ctx.getSharedPreferences("console", MODE_PRIVATE).getBoolean("chosen", false) || defaultServer(ctx) != null
     }
 
     @SuppressLint("SetJavaScriptEnabled")

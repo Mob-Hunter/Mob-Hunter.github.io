@@ -9,3 +9,4 @@ e2e-failure.png
 .dev.vars
 .wrangler
 e2e-server-failure.png
+worker/generated/

@@ -20,6 +20,7 @@ import { SettingsPage } from './pages/Settings';
 import { SimulatorPage } from './pages/Simulator';
 import { TransparencyPage } from './pages/Transparency';
 import { PrivacyPage } from './pages/Privacy';
+import { DownloadPage } from './pages/Download';
 
 type NavItem = { to: string; label: string; icon: string; perm?: Permission; anyOf?: Permission[] };
 const NAV: NavItem[] = [
@@ -123,6 +124,7 @@ export function App() {
         <Route path="/e/:token" element={<InstallPage />} />
         <Route path="/transparency/:deviceId/:key" element={<TransparencyPage />} />
         <Route path="/privacy" element={<PrivacyGate />} />
+        <Route path="/download" element={<DownloadPage />} />
         <Route path="/" element={guarded(<OverviewPage />)} />
         <Route path="/devices" element={guarded(<DevicesPage />)} />
         <Route path="/devices/:id" element={guarded(<DeviceDetailPage />)} />
