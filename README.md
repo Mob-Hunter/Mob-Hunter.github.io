@@ -34,7 +34,7 @@ Both modes run the same backend code (`src/core/backend.ts`), so every rule is t
 **Security and the non-negotiables**
 
 - Admin sign-in uses a password (PBKDF2) plus TOTP MFA, with lockout and rate limits. Cloudflare Access SSO is optional. Sessions expire after 30 minutes idle and 12 hours in total.
-- Six roles are enforced on the server for every call. Only the Location Operator can locate a device or read location data, and Super Admin can't. A wipe needs a different second approver. Nobody can change their own role, and a role change revokes that user's sessions.
+- Six roles are enforced on the server for every call. Only the Location Operator and the Super Admin (who holds every permission) can locate a device or read location data, always against a ticket and with the employee notified. A wipe needs a different second approver. Nobody can change their own role, and a role change revokes that user's sessions.
 - Commands are signed with Ed25519 and carry a nonce and a 10-minute expiry. They run once, and the agent rejects tampered, expired, replayed, wrong-device or overly long-lived commands.
 - Device identity uses a P-256 key in the Android Keystore (StrongBox where available) and a certificate from Mob Hunter's own CA. Every request is signed over method, path, timestamp, nonce and body hash. The agent pins the server's signing key from the QR.
 - The audit log is append-only and hash-chained, covering every action and every denied attempt. It has a verify button, a SIEM export, and optional HMAC-signed webhook forwarding.
@@ -53,14 +53,14 @@ Both modes run the same backend code (`src/core/backend.ts`), so every rule is t
   - **Active device:** the phone receives a signed RELEASE command. It lifts every restriction, tells the employee it is no longer managed, gives up device-owner rights and **uninstalls the agent** (nothing is wiped). The record, its command history and its encrypted location data are deleted when the phone confirms. The command is re-signed for phones that are offline longer than the 10-minute command lifetime, and a pending removal can be cancelled.
   - **Retired or wiped device:** deleted at once.
 - **Lost & stolen incidents with active tracking:**
-  - The Location Operator reports a device lost or stolen against a ticket, choosing a fix every 1, 2 or 5 minutes for up to 72 hours (extendable).
+  - The Location Operator or Super Admin reports a device lost or stolen against a ticket, choosing a fix every 1, 2 or 5 minutes for up to 72 hours (extendable).
   - The live tracking page shows the device's track, distance moved, current speed, battery and last check-in, refreshing every 15 seconds. Each viewing session is audited once per 15 minutes.
   - The phone shows a persistent notice saying how often and until when it is tracked, and stops by itself at the limit.
   - Below 15% battery it drops to every 5 minutes.
   - Closing the incident as found, recovered or a false alarm ends Lost Mode. "Not recovered" keeps the phone locked and prompts a WIPE.
-  - Every role sees incident status; only the Location Operator sees positions.
+  - Every role sees incident status; only the Location Operator and Super Admin see positions.
 - Devices list: state tabs (active, awaiting acknowledgement, Lost Mode, unnamed, retired/wiped) and bulk actions (sync policy, lock, retire, delete).
-- **Location workspace** (Location Operator only):
+- **Location workspace** (Location Operator and Super Admin):
   - a ticket index (ticket references and device names, never coordinates);
   - a fleet map of each device's latest position, with tracks, accuracy circles, scale and legend;
   - a "latest position per device" list and full history;

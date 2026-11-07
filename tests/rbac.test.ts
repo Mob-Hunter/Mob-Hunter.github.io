@@ -2,18 +2,17 @@ import { describe, expect, it } from 'vitest';
 import { assertCan, can, COMMAND_TYPES, ForbiddenError, PERMISSIONS, ROLES } from '../src/core/rbac';
 
 describe('RBAC matrix', () => {
-  it('LOCATE and Lost Mode are Location Operator only', () => {
+  it('LOCATE, Lost Mode and location results: Location Operator and Super Admin only', () => {
     for (const perm of ['command.LOCATE', 'command.LOST_MODE_ON', 'command.LOST_MODE_OFF', 'location.read'] as const) {
-      expect(PERMISSIONS[perm]).toEqual(['LOCATION_OPERATOR']);
+      expect([...PERMISSIONS[perm]].sort()).toEqual(['LOCATION_OPERATOR', 'SUPER_ADMIN']);
     }
   });
   it('Helpdesk cannot locate, wipe, rename or read audit', () => {
     for (const p of ['command.LOCATE', 'command.WIPE', 'device.update', 'audit.read', 'location.read'] as const) expect(can('HELPDESK', p)).toBe(false);
     expect(can('HELPDESK', 'command.LOCK')).toBe(true);
   });
-  it('Super Admin cannot read location (segregation of duties)', () => {
-    expect(can('SUPER_ADMIN', 'location.read')).toBe(false);
-    expect(can('SUPER_ADMIN', 'command.LOCATE')).toBe(false);
+  it('Super Admin holds every permission', () => {
+    for (const perm of Object.keys(PERMISSIONS) as (keyof typeof PERMISSIONS)[]) expect(can('SUPER_ADMIN', perm)).toBe(true);
   });
   it('Auditor is read-only', () => {
     for (const t of COMMAND_TYPES) expect(can('AUDITOR', `command.${t}`)).toBe(false);

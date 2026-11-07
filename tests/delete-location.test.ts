@@ -50,7 +50,7 @@ describe('device deletion', () => {
 });
 
 describe('location data for the Location Operator', () => {
-  it('ticket index lists tickets, devices and counts without coordinates; Location Operator only', async () => {
+  it('ticket index lists tickets, devices and counts without coordinates; Location Operator and Super Admin only', async () => {
     const { backend, signIn, enrolledAgent, clock } = await setup();
     const { agent, deviceId, admin } = await enrolledAgent();
     await backend.updateDevice(admin, deviceId, { label: 'Field phone' });
@@ -64,7 +64,8 @@ describe('location data for the Location Operator', () => {
     expect(idx.map((t) => t.ticket)).toEqual(['INC-12', 'INC-11']);
     expect(idx[0]).toMatchObject({ devices: ['Field phone'], requests: 1, fixes: 1, open: true });
     expect(JSON.stringify(idx)).not.toMatch(/"lat"|"lng"/);
-    for (const role of ['SUPER_ADMIN', 'DEVICE_ADMIN', 'HELPDESK', 'SECURITY', 'AUDITOR']) {
+    expect(backend.listLocationTickets(await signIn('SUPER_ADMIN'))).toHaveLength(2);
+    for (const role of ['DEVICE_ADMIN', 'HELPDESK', 'SECURITY', 'AUDITOR']) {
       await expect(Promise.resolve().then(async () => backend.listLocationTickets(await signIn(role)))).rejects.toMatchObject({ status: 403 });
     }
   });

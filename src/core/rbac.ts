@@ -52,17 +52,17 @@ export type Permission =
 
 const ALL_READ: Role[] = [...ROLES];
 
-/** Single source of truth for who may do what. */
+/** Single source of truth for who may do what. Super Admin holds every permission. */
 export const PERMISSIONS: Record<Permission, readonly Role[]> = {
   'device.read': ALL_READ,
   'device.update': ['SUPER_ADMIN', 'DEVICE_ADMIN'],
   'device.policy': ['SUPER_ADMIN', 'DEVICE_ADMIN'],
   'enrollment.create': ['SUPER_ADMIN', 'DEVICE_ADMIN'],
-  // Non-negotiable #4: location is readable ONLY through the Location Operator path.
-  'location.read': ['LOCATION_OPERATOR'],
-  'location.purge': ['SECURITY'],
+  // Location: Location Operator, plus Super Admin (organisation decision). Every read still needs a ticket and is audited.
+  'location.read': ['SUPER_ADMIN', 'LOCATION_OPERATOR'],
+  'location.purge': ['SUPER_ADMIN', 'SECURITY'],
   'audit.read': ['SUPER_ADMIN', 'SECURITY', 'AUDITOR'],
-  'audit.export': ['SECURITY', 'AUDITOR'],
+  'audit.export': ['SUPER_ADMIN', 'SECURITY', 'AUDITOR'],
   'roles.read': ALL_READ,
   'roles.manage': ['SUPER_ADMIN'],
   'command.approve': ['SUPER_ADMIN', 'DEVICE_ADMIN', 'SECURITY'],
@@ -73,12 +73,12 @@ export const PERMISSIONS: Record<Permission, readonly Role[]> = {
   'device.delete': ['SUPER_ADMIN', 'DEVICE_ADMIN'],
   'apps.manage': ['SUPER_ADMIN', 'DEVICE_ADMIN'],
   'settings.manage': ['SUPER_ADMIN'],
-  // Data-subject access requests are handled by Security (acting for the DPO), never by the Location Operator.
-  'privacy.dsar': ['SECURITY'],
-  // LOCATE and Lost Mode are allowed only for Location Operator (Phase 1 spec).
-  'command.LOCATE': ['LOCATION_OPERATOR'],
-  'command.LOST_MODE_ON': ['LOCATION_OPERATOR'],
-  'command.LOST_MODE_OFF': ['LOCATION_OPERATOR'],
+  // Data-subject access requests: Security (acting for the DPO) and Super Admin; never the Location Operator.
+  'privacy.dsar': ['SUPER_ADMIN', 'SECURITY'],
+  // LOCATE and Lost Mode: Location Operator and Super Admin. Ticket required; the employee is always notified.
+  'command.LOCATE': ['SUPER_ADMIN', 'LOCATION_OPERATOR'],
+  'command.LOST_MODE_ON': ['SUPER_ADMIN', 'LOCATION_OPERATOR'],
+  'command.LOST_MODE_OFF': ['SUPER_ADMIN', 'LOCATION_OPERATOR'],
   'command.LOCK': ['SUPER_ADMIN', 'DEVICE_ADMIN', 'HELPDESK'],
   'command.SYNC_POLICY': ['SUPER_ADMIN', 'DEVICE_ADMIN', 'HELPDESK'],
   'command.REBOOT': ['SUPER_ADMIN', 'DEVICE_ADMIN', 'HELPDESK'],

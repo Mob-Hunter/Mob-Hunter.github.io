@@ -256,12 +256,14 @@ try {
   await page.getByText('Timesheets', { exact: true }).waitFor();
   ok('organisation settings saved; app catalogue shown');
 
-  // Device lifecycle end: retire, then delete (Super Admin) — and location is restricted for this role.
+  // Device lifecycle end: retire, then delete (Super Admin). Super Admin holds every permission, so the
+  // device page offers the ticketed location view instead of the "Restricted" notice.
   await go('Devices');
   await page.getByRole('heading', { name: 'Devices', exact: true }).waitFor();
   await page.getByRole('link', { name: 'Unnamed device' }).first().click();
   await page.getByRole('heading', { name: 'Unnamed device' }).waitFor();
-  await page.getByText('Restricted.').waitFor();
+  await page.getByLabel('Ticket justifying this view').first().waitFor();
+  assert.equal(await page.getByText('Restricted.').count(), 0);
   const deviceUrl = page.url();
   await page.getByLabel('Reason', { exact: true }).fill('Returned to IT stock, screen cracked');
   await page.getByRole('button', { name: 'Retire', exact: true }).click();

@@ -24,7 +24,7 @@ Reference law: Sri Lanka **Personal Data Protection Act No. 9 of 2022** (PDPA). 
 ### 3. Insider misuse by administrators (High)
 **Risk.** A console that can locate or wipe phones can be abused, for example to follow a colleague.
 **Overcome it.** Segregate duties. Require four-eyes approval for destructive actions. Have Security review location-access reports every month. Write misuse into the disciplinary policy.
-**Built in:** only the Location Operator can locate, and the Super Admin can't see location. Wipes need a second, different approver, and nobody can change their own role. Every action and every denied attempt is written to a hash-chained audit log, and changing a role revokes that person's sessions.
+**Built in:** only the Location Operator and the Super Admin can locate. By organisation decision the Super Admin holds every permission, including location; every location request still needs a ticket, notifies the employee and is audited, so review Super Admin location access in the monthly report and keep the number of Super Admins to a minimum. Wipes need a second, different approver, and nobody can change their own role. Every action and every denied attempt is written to a hash-chained audit log, and changing a role revokes that person's sessions.
 
 ### 4. Remote wipe and personal data (High)
 **Risk.** Company phones often still hold personal photos and messages, which a wipe destroys.
@@ -50,7 +50,7 @@ Deleting an active device returns the phone to the employee as an unmanaged phon
 ### Active tracking of lost or stolen devices
 High-frequency tracking is the most intrusive location feature, so it is tightly bounded.
 **Built in:**
-- Location Operator only, with a ticket and a written justification.
+- Location Operator or Super Admin only, with a ticket and a written justification.
 - At most 72 hours at a time. The end time is signed into the command and enforced by the phone itself, and every extension needs a reason and is audited.
 - The employee sees a persistent notice saying how often and until when.
 - Low battery slows tracking to 5 minutes.

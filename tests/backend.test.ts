@@ -94,10 +94,14 @@ describe('Phase 1 acceptance: relay end to end', () => {
     expect(backend.listAudit(auditor).some((r) => r.action === 'access.denied')).toBe(true);
   });
 
-  it('every role except Location Operator is denied LOCATE and location results', async () => {
+  it('only Location Operator and Super Admin may LOCATE and read location results', async () => {
     const { backend, signIn, enrolledAgent } = await setup();
     const { deviceId } = await enrolledAgent();
-    for (const role of ['SUPER_ADMIN', 'DEVICE_ADMIN', 'HELPDESK', 'SECURITY', 'AUDITOR']) {
+    const sa = await signIn('SUPER_ADMIN');
+    await expectApiError(backend.issueCommand(sa, deviceId, { type: 'LOCATE', ticket: '', reason: 'reason here' }), 422);
+    await backend.issueCommand(sa, deviceId, { type: 'LOCATE', ticket: 'INC-1', reason: 'reason here' });
+    backend.listLocationResults(sa, { ticket: 'INC-1' });
+    for (const role of ['DEVICE_ADMIN', 'HELPDESK', 'SECURITY', 'AUDITOR']) {
       const s = await signIn(role);
       await expectApiError(backend.issueCommand(s, deviceId, { type: 'LOCATE', ticket: 'INC-1', reason: 'reason here' }), 403);
       await expectApiError(backend.listLocationResults(s, { ticket: 'INC-1' }), 403);
@@ -389,9 +393,9 @@ describe('audit', () => {
     expect(v.brokenAt).toBe(4);
   });
 
-  it('export is restricted to Security/Auditor and is itself audited', async () => {
+  it('export is restricted to Security, Auditor and Super Admin and is itself audited', async () => {
     const { backend, signIn } = await setup();
-    await expectApiError(backend.exportAudit(await signIn('SUPER_ADMIN')), 403);
+    await expectApiError(backend.exportAudit(await signIn('DEVICE_ADMIN')), 403);
     const a = await signIn('AUDITOR');
     const exp = JSON.parse(await backend.exportAudit(a));
     expect(exp.verification.ok).toBe(true);

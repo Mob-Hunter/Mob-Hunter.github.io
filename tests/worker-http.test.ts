@@ -8,6 +8,7 @@ import { Backend, MemoryStore, deviceRequestMessage } from '../src/core/backend'
 import { canonicalJson, generateEs256, sha256Hex, toHex, verifyEd25519, randomId } from '../src/core/crypto';
 import { totp } from '../src/core/totp';
 import { HttpDeviceTransport } from '../src/api/device';
+import { COLLECTION_NOTICE } from '../src/core/enrollment';
 import { SimulatedAgent, newAgentFromProvisioning } from '../src/core/agent';
 import { verifyChain } from '../src/core/audit';
 
@@ -149,7 +150,7 @@ describe('Worker HTTP API', () => {
       return { status: res.status, json: await res.json() as any };
     };
     // body formatting is irrelevant: the hash is over raw bytes
-    const ci = await dev('POST', '/v1/checkin', { telemetry: { batteryLevel: 80, batteryHealth: 'good', batteryTempC: 30, storageFreeGb: 50, storageTotalGb: 128, integrity: 'NOT_EVALUATED', patchLevel: '2026-10-05' }, serial: 'S1', model: 'Pixel 9', os: 'Android 16', policyAck: { version: '2026-11-v1', at: Date.now() } });
+    const ci = await dev('POST', '/v1/checkin', { telemetry: { batteryLevel: 80, batteryHealth: 'good', batteryTempC: 30, storageFreeGb: 50, storageTotalGb: 128, integrity: 'NOT_EVALUATED', patchLevel: '2026-10-05' }, serial: 'S1', model: 'Pixel 9', os: 'Android 16', policyAck: { version: COLLECTION_NOTICE.version, at: Date.now() } });
     expect(ci.status).toBe(200);
     expect(ci.json.state).toBe('active');
     // tampered body hash / signature / missing cert are rejected
@@ -176,8 +177,8 @@ describe('Worker HTTP API', () => {
     expect(res.status).toBe(200);
     const locs = await ctx.admin('GET', `/admin/location-results?ticket=INC-1&deviceId=${en.json.deviceId}`, undefined, 'op');
     expect(locs.json[0].fix.lat).toBe(6.9271);
-    // helpdesk-equivalent (super admin) cannot read locations
-    expect((await ctx.admin('GET', '/admin/location-results?ticket=INC-1', undefined, 'sa')).status).toBe(403);
+    // Super Admin holds every permission, including location (still ticketed and audited)
+    expect((await ctx.admin('GET', '/admin/location-results?ticket=INC-1', undefined, 'sa')).status).toBe(200);
     expect((await ctx.admin('GET', '/admin/audit/verify', undefined, 'sa')).json.ok).toBe(true);
   });
 
@@ -211,13 +212,13 @@ describe('Worker HTTP API', () => {
     expect(reset.json.totpSecret).not.toBe(hd);
   });
 
-  it('employees: import, offboard, DSAR (Security only, ticketed, audited)', async () => {
+  it('employees: import, offboard, DSAR (Security and Super Admin, ticketed, audited)', async () => {
     const ctx = await bootstrapped();
     const imp = await ctx.admin('POST', '/admin/employees/import', { rows: [{ name: 'A One', email: 'a@corp.test', department: 'Ops' }, { name: 'B', email: 'bad', department: '' }] }, 'sa');
     expect(imp.json).toMatchObject({ created: 1, updated: 0 });
     expect(imp.json.errors).toHaveLength(1);
     const emp = (await ctx.admin('GET', '/admin/employees', undefined, 'sa')).json[0];
-    expect((await ctx.admin('POST', `/admin/employees/${emp.id}/dsar`, { ticket: 'DSAR-1' }, 'sa')).status).toBe(403);
+    expect((await ctx.admin('POST', `/admin/employees/${emp.id}/dsar`, {}, 'sa')).status).toBe(422); // allowed, but a ticket is required
     const sec = await ctx.mk('SECURITY', 'sec@corp.test');
     await ctx.signIn('sec@corp.test', sec, 'sec');
     expect((await ctx.admin('POST', `/admin/employees/${emp.id}/dsar`, {}, 'sec')).status).toBe(422);
@@ -269,7 +270,7 @@ describe('Worker HTTP API', () => {
     await agent.poll();
     const idx = await ctx.admin('GET', '/admin/location-tickets', undefined, 'op');
     expect(idx.json[0]).toMatchObject({ ticket: 'INC-55', fixes: 1 });
-    expect((await ctx.admin('GET', '/admin/location-tickets', undefined, 'sa')).status).toBe(403);
+    expect((await ctx.admin('GET', '/admin/location-tickets', undefined, 'sa')).status).toBe(200);
     expect((await ctx.admin('GET', '/admin/location-results?ticket=INC-55&tier=2', undefined, 'op')).json).toHaveLength(0);
     expect((await ctx.admin('GET', '/admin/location-results?ticket=INC-55&tier=1', undefined, 'op')).json).toHaveLength(1);
 
@@ -295,7 +296,7 @@ describe('Worker HTTP API', () => {
     await agent.checkin();
     const id = agent.state.deviceId!;
     const body = { kind: 'lost', ticket: 'INC-71', reason: 'Lost on the train home', intervalSec: 120, durationHours: 24 };
-    expect((await ctx.admin('POST', `/admin/devices/${id}/incidents`, body, 'sa')).status).toBe(403);
+    expect((await ctx.admin('POST', `/admin/devices/${id}/incidents`, { ...body, ticket: '' }, 'sa')).status).toBe(422); // allowed, ticket still required
     const inc = await ctx.admin('POST', `/admin/devices/${id}/incidents`, body, 'op');
     expect(inc.status).toBe(201);
     await agent.poll();
@@ -303,7 +304,7 @@ describe('Worker HTTP API', () => {
     const track = await ctx.admin('GET', `/admin/incidents/${inc.json.id}/track`, undefined, 'op');
     expect(track.json).toMatchObject({ trackingActive: true, incident: { ticket: 'INC-71' } });
     expect(track.json.fixes).toHaveLength(1);
-    expect((await ctx.admin('GET', `/admin/incidents/${inc.json.id}/track`, undefined, 'sa')).status).toBe(403);
+    expect((await ctx.admin('GET', `/admin/incidents/${inc.json.id}/track`, undefined, 'sa')).status).toBe(200);
     expect((await ctx.admin('GET', '/admin/incidents', undefined, 'sa')).json[0]).toMatchObject({ status: 'active', kind: 'lost' });
     const up = await ctx.admin('POST', `/admin/incidents/${inc.json.id}/tracking`, { intervalSec: 60, reason: 'Phone is moving, need more detail' }, 'op');
     expect(up.json.trackingIntervalSec).toBe(60);

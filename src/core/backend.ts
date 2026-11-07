@@ -1032,7 +1032,7 @@ export class Backend {
 
   // ------------------------------------------------------------------ admin: location
 
-  /** GET /admin/location-results — Location Operator only; every read is audited. */
+  /** GET /admin/location-results — Location Operator and Super Admin; every read is audited. */
   async listLocationResults(sessionId: string, filter: { deviceId?: string; ticket: string; tier?: 1 | 2 | 3; sinceMs?: number; onlyTicket?: boolean }): Promise<LocationView[]> {
     const { user } = this.requireSession(sessionId);
     this.guard(user, 'location.read');
@@ -1061,7 +1061,7 @@ export class Backend {
   /**
    * Index of location tickets (no coordinates): which tickets have location
    * requests or results, for which devices, and when. Lets the Location
-   * Operator pick the right ticket instead of guessing. Location Operator only.
+   * Operator pick the right ticket instead of guessing. Location Operator and Super Admin.
    */
   listLocationTickets(sessionId: string): { ticket: string; devices: string[]; requests: number; fixes: number; lastAt: number; open: boolean }[] {
     const { user } = this.requireSession(sessionId);
@@ -1221,7 +1221,7 @@ export class Backend {
 
   /**
    * Report a device lost or stolen: turns on Lost Mode with time-boxed active
-   * tracking (a fix every 1–5 min for up to 72 h). Location Operator only,
+   * tracking (a fix every 1–5 min for up to 72 h). Location Operator and Super Admin,
    * ticket + reason required, the phone shows a persistent notice for as long
    * as tracking runs, and the phone itself stops at `trackingUntil`.
    */
