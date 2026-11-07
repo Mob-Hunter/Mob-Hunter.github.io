@@ -1,4 +1,4 @@
-import { Card, ErrorBox, useAction, useCan, useMe, useQuery, useRuntime } from '../ui/kit';
+import { Card, ErrorBox, useAction, useCan, useMe, useQuery, useRuntime, TableWrap } from '../ui/kit';
 import { PERMISSIONS, ROLES, ROLE_LABEL, type Permission, type Role } from '../core/rbac';
 
 const PERM_LABEL: Partial<Record<Permission, string>> = {
@@ -38,7 +38,7 @@ export function RolesPage() {
       <h1>Roles &amp; permissions</h1>
       {err && <ErrorBox>{err}</ErrorBox>}
       <Card title="Permission matrix (enforced server-side)">
-        <div className="table-wrap">
+        <TableWrap label="Permission matrix" stack={false}>
           <table className="matrix">
             <thead>
               <tr>
@@ -61,7 +61,7 @@ export function RolesPage() {
               ))}
             </tbody>
           </table>
-        </div>
+        </TableWrap>
         <p className="tiny muted">
           Segregation of duties: Super Admin cannot see location; only the Location Operator can, and only against a ticket. Wipes need a second approver. Nobody can
           change their own role.

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Badge, Card, Empty, Field, QrImage, fmtAgo, useAction, useNow, useQuery, useRuntime } from '../ui/kit';
+import { Badge, Card, Empty, Field, QrImage, fmtAgo, useAction, useNow, useQuery, useRuntime, TableWrap } from '../ui/kit';
 import type { ProvisioningPayload } from '../core/types';
 
 export function installUrl(token: string): string {
@@ -56,6 +56,11 @@ export function EnrolPage() {
         </div>
       </Card>
 
+      {!minted && (
+        <Card title="2 · Scan on the factory-reset phone">
+          <Empty>Mint an enrolment in step 1 and its provisioning QR appears here. It is valid for 15 minutes and can be used once.</Empty>
+        </Card>
+      )}
       {minted && (
         <Card
           title="2 · Scan on the factory-reset phone"
@@ -125,7 +130,7 @@ export function EnrolPage() {
 
       <Card title="Enrolment tokens">
         {tokens?.length ? (
-          <div className="table-wrap">
+          <TableWrap label="Enrolment tokens">
             <table>
               <thead>
                 <tr>
@@ -148,7 +153,7 @@ export function EnrolPage() {
                 ))}
               </tbody>
             </table>
-          </div>
+          </TableWrap>
         ) : (
           <Empty>No tokens yet.</Empty>
         )}

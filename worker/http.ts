@@ -143,6 +143,17 @@ export function createApp(cfg: HttpConfig) {
     return c.json({ user: r.user });
   });
 
+  /** Who is signed in, if anyone: lets the console start without a 401 when there is no session. */
+  app.get('/session', (c) => {
+    const sid = getCookie(c, SESSION_COOKIE);
+    if (!sid) return c.json({ user: null });
+    try {
+      return c.json({ user: c.var.backend.me(sid) });
+    } catch {
+      return c.json({ user: null });
+    }
+  });
+
   // Everything below needs a session cookie AND the CSRF header (SameSite=Strict + custom header).
   app.use('/admin/*', async (c, next) => {
     if (['/api/admin/login', '/api/admin/mfa', '/api/admin/sso'].includes(c.req.path)) return next();

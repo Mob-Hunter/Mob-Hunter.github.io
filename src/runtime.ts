@@ -117,7 +117,7 @@ export class Runtime {
       const api = new RemoteConsoleApi('./api');
       const rt = new Runtime(api, server, null, []);
       try {
-        rt.me = await api.me();
+        rt.me = await api.currentUser();
       } catch {
         rt.me = null;
       }

@@ -9,6 +9,7 @@ import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import assert from 'node:assert/strict';
+import { AxeBuilder } from '@axe-core/playwright';
 
 const DIST = new URL('../dist/', import.meta.url).pathname;
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.webmanifest': 'application/manifest+json' };
@@ -37,7 +38,7 @@ let probe404 = 0;
 let other404 = [];
 page.on('response', (r) => {
   if (r.status() !== 404) return;
-  if (/\/api\/health$|\/downloads\/[\w.-]+\.apk$/.test(r.url())) probe404++;
+  if (/\/api\/health$|\/downloads\/([\w.-]+\.apk|SHA256SUMS\.txt)$/.test(r.url())) probe404++;
   else other404.push(r.url());
 });
 page.on('console', (m) => m.type() === 'error' && !(probe404 > 0 && /status of 404/.test(m.text())) && errors.push(m.text()));
@@ -55,6 +56,12 @@ async function signIn(roleLabel) {
   await page.getByLabel('Authenticator code (MFA)').fill(code);
   await page.getByRole('button', { name: 'Sign in' }).click();
   await page.getByRole('heading', { name: 'Overview' }).waitFor();
+}
+/** Main navigation, as a phone user does it: open the menu first when the menu button is shown. */
+async function go(name) {
+  const menu = page.getByRole('button', { name: 'Open menu' });
+  if (await menu.isVisible()) await menu.click();
+  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name, exact: typeof name === 'string' }).click();
 }
 async function signOut() {
   await page.getByRole('button', { name: 'Sign out' }).click();
@@ -78,7 +85,7 @@ try {
   // Phase 2: enrol + rename
   await signIn('Device Admin');
   ok('Device Admin signed in with password + TOTP');
-  await page.getByRole('link', { name: /Add devices/ }).first().click();
+  await go(/Add devices/);
   await page.getByRole('button', { name: 'Mint token + QR' }).click();
   await page.getByAltText('Device-owner provisioning QR code').waitFor();
   const installUrl = await page.getByLabel('Install page (share with the person enrolling)').inputValue();
@@ -94,7 +101,7 @@ try {
   await install.close();
   ok('install link is single-use (shows "already used")');
 
-  await page.getByRole('link', { name: 'Devices', exact: true }).click();
+  await go('Devices');
   await page.getByRole('tab', { name: /Unnamed/ }).click();
   await page.waitForURL(/unnamed=1/);
   await page.getByText('Unnamed device').first().waitFor();
@@ -108,7 +115,7 @@ try {
   ok('new device appeared as "Unnamed device" and was renamed inline');
 
   // Acknowledge notice on the simulator so the device can be located
-  await page.getByRole('link', { name: /Device simulator/ }).click();
+  await go(/Device simulator/);
   await page.locator('.phone').nth(2).waitFor();
   const ackButtons = page.getByRole('button', { name: 'I understand' });
   while ((await ackButtons.count()) > 0) {
@@ -120,17 +127,17 @@ try {
 
   // Phase 1: Helpdesk is denied LOCATE (not even offered) — backend check covered by unit tests
   await signIn('Helpdesk');
-  await page.getByRole('link', { name: 'Devices', exact: true }).click();
+  await go('Devices');
   await page.getByRole('link', { name: 'Kavya sales phone' }).click();
   const options = await page.getByLabel('Command').locator('option').allTextContents();
   assert.ok(!options.includes('LOCATE'), 'Helpdesk must not be offered LOCATE');
-  assert.equal(await page.getByRole('link', { name: /Locations/ }).count(), 0);
+  assert.equal(await page.locator('nav.sidenav a', { hasText: 'Locations' }).count(), 0);
   ok('Helpdesk is not offered LOCATE and has no Locations menu');
   await signOut();
 
   // Phase 1: Location Operator locates through the relay
   await signIn('Location Operator');
-  await page.getByRole('link', { name: 'Devices', exact: true }).click();
+  await go('Devices');
   await page.getByRole('link', { name: 'Kavya sales phone' }).click();
   await page.getByLabel('Command').selectOption('LOCATE');
   await page.getByLabel('Ticket reference').fill('INC-2041');
@@ -144,7 +151,7 @@ try {
   await page.getByText('Last position').waitFor();
   ok('location result decrypted, summarised and plotted for the Location Operator');
 
-  await page.getByRole('link', { name: /Device simulator/ }).click();
+  await go(/Device simulator/);
   const notif = page.locator('.notif', { hasText: 'Your device location was requested' }).filter({ hasText: 'INC-2041' }).first();
   await notif.waitFor();
   assert.match(await notif.textContent(), /INC-2041/);
@@ -164,7 +171,7 @@ try {
   await t.close();
   ok('employee transparency page lists the request');
 
-  await page.getByRole('link', { name: /Locations/ }).click();
+  await go(/Locations/);
   await page.getByRole('heading', { name: 'Locations', exact: true }).waitFor();
   await page.locator('tr', { hasText: 'INC-1001' }).getByRole('button', { name: 'View' }).click();
   await page.getByRole('img', { name: /Map with 2 location fixes/ }).waitFor();
@@ -173,7 +180,7 @@ try {
   ok('Locations workspace: seeded ticket INC-1001 shows fleet map, latest position per device and history');
 
   // Lost / stolen incident with active tracking
-  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Devices', exact: true }).click();
+  await go('Devices');
   await page.getByRole('heading', { name: 'Devices', exact: true }).waitFor();
   await page.getByRole('link', { name: "Nimal's field phone" }).click();
   await page.getByRole('heading', { name: 'Report lost or stolen' }).waitFor();
@@ -187,7 +194,7 @@ try {
   await page.getByText(/Tracking every 1 min/).first().waitFor();
   await page.getByText('Stolen device:').waitFor();
   await page.getByRole('img', { name: /Live track with \d+ location fixes/ }).waitFor({ timeout: 30_000 });
-  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: /Lost & stolen/ }).click();
+  await go(/Lost & stolen/);
   await page.getByRole('heading', { name: /Open incidents \(1\)/ }).waitFor();
   await page.getByRole('link', { name: "Nimal's field phone" }).click();
   await page.getByLabel('Outcome').selectOption('recovered');
@@ -199,7 +206,7 @@ try {
 
   // Audit chain verifies
   await signIn('Auditor');
-  await page.getByRole('link', { name: /Audit log/ }).click();
+  await go(/Audit log/);
   await page.getByRole('button', { name: 'Verify hash chain' }).click();
   await page.getByText(/Chain intact/).waitFor();
   assert.ok((await page.locator('table.audit tbody tr').count()) > 10);
@@ -209,7 +216,7 @@ try {
 
   // Enterprise features: users, employees, compliance, settings (Super Admin)
   await signIn('Super Admin');
-  await page.getByRole('link', { name: /Users & access/ }).click();
+  await go(/Users & access/);
   await page.getByRole('heading', { name: 'Users & access', exact: true }).waitFor();
   await page.getByLabel('Name', { exact: true }).fill('Priya Auditor');
   await page.getByLabel('Work e-mail').fill('priya@example.com');
@@ -221,7 +228,7 @@ try {
   await page.getByText('Active sessions').waitFor();
   ok('Super Admin invited a user and got an authenticator QR; sessions listed');
 
-  await page.getByRole('link', { name: /Employees/ }).click();
+  await go(/Employees/);
   await page.getByRole('heading', { name: 'Employees', exact: true }).waitFor();
   await page.getByLabel('Name', { exact: true }).fill('Tharindu Bandara');
   await page.getByLabel('Work e-mail').fill('tharindu@example.com');
@@ -232,7 +239,7 @@ try {
   await page.getByText(/1 created, 0 updated, 1 rejected/).waitFor();
   ok('employee added and HR CSV imported (bad row rejected)');
 
-  await page.getByRole('link', { name: /Compliance/ }).click();
+  await go(/Compliance/);
   await page.getByRole('heading', { name: 'Compliance', exact: true }).waitFor();
   await page.getByText('Non-compliant').waitFor();
   const dl = page.waitForEvent('download');
@@ -241,7 +248,7 @@ try {
   assert.match(file.suggestedFilename(), /^device-inventory-.*\.csv$/);
   ok('compliance view rendered and inventory CSV exported');
 
-  await page.getByRole('link', { name: /Settings/ }).click();
+  await go(/Settings/);
   await page.getByRole('heading', { name: 'Settings', exact: true }).waitFor();
   await page.getByLabel('Data Protection Officer contact').fill('privacy@example.com');
   await page.getByRole('button', { name: 'Save' }).click();
@@ -250,7 +257,7 @@ try {
   ok('organisation settings saved; app catalogue shown');
 
   // Device lifecycle end: retire, then delete (Super Admin) — and location is restricted for this role.
-  await page.getByRole('link', { name: 'Devices', exact: true }).click();
+  await go('Devices');
   await page.getByRole('heading', { name: 'Devices', exact: true }).waitFor();
   await page.getByRole('link', { name: 'Unnamed device' }).first().click();
   await page.getByRole('heading', { name: 'Unnamed device' }).waitFor();
@@ -267,13 +274,13 @@ try {
   await page.getByText('No retired or wiped devices.').waitFor();
   await page.goto(deviceUrl);
   await page.getByRole('alert').filter({ hasText: 'Device not found' }).waitFor();
-  await page.getByRole('link', { name: /Audit log/ }).click();
+  await go(/Audit log/);
   await page.getByLabel('Filter audit rows').fill('device.deleted');
   await page.locator('table.audit tbody tr', { hasText: 'device.deleted' }).first().waitFor();
   ok('device retired, then permanently deleted with reason + typed confirmation; recorded in the audit log');
 
   // Deleting an ACTIVE device: the agent releases management and uninstalls itself, then the record is deleted.
-  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Devices', exact: true }).click();
+  await go('Devices');
   await page.getByRole('heading', { name: 'Devices', exact: true }).waitFor();
   await page.getByRole('link', { name: 'Kavya sales phone' }).click();
   await page.getByRole('heading', { name: 'Kavya sales phone' }).waitFor();
@@ -281,16 +288,46 @@ try {
   await page.getByLabel('Type "DELETE" to confirm').fill('DELETE');
   await page.getByRole('button', { name: 'Uninstall agent & delete' }).click();
   await page.locator('.toast-ok', { hasText: 'uninstall itself' }).waitFor();
-  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Devices', exact: true }).click();
+  await go('Devices');
   await page.getByRole('heading', { name: 'Devices', exact: true }).waitFor();
   await page.waitForFunction(() => ![...document.querySelectorAll('.device-name')].some((a) => a.textContent === 'Kavya sales phone'), null, { timeout: 15_000 });
-  await page.getByRole('link', { name: /Device simulator/ }).click();
+  await go(/Device simulator/);
   await page.getByText('Personal phone — not managed').first().waitFor();
   await page.getByText('This phone is no longer managed').first().waitFor();
-  await page.getByRole('link', { name: /Audit log/ }).click();
+  await go(/Audit log/);
   await page.getByLabel('Filter audit rows').fill('device.released');
   await page.locator('table.audit tbody tr', { hasText: 'device.released' }).first().waitFor();
   ok('deleting an active device: agent released management and uninstalled itself, then the record was deleted');
+
+  // Phone tables become labelled cards (the audit log is readable without sideways scrolling)
+  const label = await page.locator('table.audit tbody tr').first().locator('td').nth(3).getAttribute('data-label');
+  assert.equal(label, 'Action');
+  assert.equal(await page.locator('table.audit thead').evaluate((t) => t.getBoundingClientRect().height <= 1), true);
+  ok('audit log rows stack as labelled cards on a phone');
+
+  // Phone menu: opens, lists every section, closes on Escape and after navigating
+  const menuBtn = page.getByRole('button', { name: 'Open menu' });
+  await menuBtn.click();
+  const mainNav = page.getByRole('navigation', { name: 'Main' });
+  await mainNav.getByRole('link', { name: /Settings/ }).waitFor();
+  assert.equal(await page.getByRole('button', { name: 'Close menu' }).getAttribute('aria-expanded'), 'true');
+  await page.keyboard.press('Escape');
+  await mainNav.getByRole('link', { name: /Settings/ }).waitFor({ state: 'hidden' });
+  await go(/Compliance/);
+  await page.getByRole('heading', { name: 'Compliance', level: 1 }).waitFor();
+  assert.equal(await mainNav.getByRole('link', { name: /Settings/ }).isVisible(), false);
+  ok('phone menu opens, closes on Escape and after navigating');
+
+  // Accessibility: no serious or critical WCAG 2.1 AA violations on the main screens
+  for (const route of ['#/', '#/devices', '#/audit', '#/settings', '#/privacy', '#/download']) {
+    await page.goto(`${base}${route}`);
+    await page.locator('h1').first().waitFor();
+    await page.waitForTimeout(300);
+    const r = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze();
+    const bad = r.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical');
+    assert.deepEqual(bad.map((v) => `${route} ${v.id}: ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`), []);
+  }
+  ok('no serious/critical accessibility violations (axe, WCAG 2.1 AA) on the main screens');
 
   // No horizontal scroll at phone width
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);

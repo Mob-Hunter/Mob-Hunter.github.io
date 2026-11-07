@@ -10,7 +10,7 @@
   --accent: #0ea5e9;
   --ok: #15803d;
   --ok-bg: #dcfce7;
-  --warn: #a16207;
+  --warn: #854d0e;
   --warn-bg: #fef3c7;
   --bad: #b91c1c;
   --bad-bg: #fee2e2;
@@ -305,3 +305,33 @@ input[type='file'] { min-height: 0; padding: 6px; }
 @media (min-width: 560px) { .download-card { grid-template-columns: 200px 1fr; } }
 .download-card .qr { width: 200px; height: 200px; margin: 0 auto; }
 .landing-card { margin: 8px 0 16px; }
+
+/* Phone tables: rows become labelled cards instead of a sideways-scrolling grid */
+@media (max-width: 639px) {
+  .table-stack thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .table-stack table, .table-stack tbody, .table-stack tr, .table-stack td { display: block; width: 100%; }
+  .table-stack tr { padding: 10px 0; border-bottom: 1px solid var(--border); }
+  .table-stack tr:last-child { border-bottom: 0; }
+  .table-stack td { position: relative; min-height: 1.6em; padding: 3px 0 3px 7.5rem; border: 0; overflow-wrap: anywhere; }
+  .table-stack td::before { content: attr(data-label); position: absolute; left: 0; top: 5px; width: 7rem; font-size: .72rem; font-weight: 600; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); }
+  .table-stack td[data-label=""] { padding-left: 0; }
+  .table-stack td[data-label=""]::before { content: none; }
+}
+.table-wrap td.nowrap, .table-wrap .nowrap { white-space: nowrap; }
+input[type=checkbox], input[type=radio] { width: 20px; height: 20px; accent-color: var(--primary); flex-shrink: 0; }
+
+/* Phone navigation: a menu button opens the full section list */
+.menu-btn { font-size: 1.15rem; min-width: 44px; min-height: 40px; padding: 4px 10px; }
+.nav-user { display: none; }
+@media (max-width: 899px) {
+  .sidenav { display: none; }
+  .sidenav.open { display: flex; flex-direction: column; position: fixed; top: var(--topbar-h, 57px); left: 0; right: 0; bottom: 0; z-index: 30; overflow-y: auto; gap: 2px; padding: 12px 16px calc(16px + env(safe-area-inset-bottom)); border-bottom: 0; }
+  .sidenav.open .navlink { font-size: 1rem; min-height: 48px; }
+  .sidenav.open .nav-user { display: flex; flex-direction: column; padding: 4px 12px 12px; margin-bottom: 6px; border-bottom: 1px solid var(--border); }
+  body.menu-open { overflow: hidden; }
+}
+@media (min-width: 900px) { .menu-btn { display: none; } }
+
+h1.brand { margin: 0; font-size: 1.4rem; }
+@media (prefers-color-scheme: dark) { .btn-danger { background: #b91c1c; border-color: #b91c1c; } }
+@media (max-width: 899px) { .userchip-role { display: none; } }

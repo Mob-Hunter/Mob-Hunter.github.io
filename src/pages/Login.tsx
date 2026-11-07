@@ -73,12 +73,12 @@ export function LoginPage() {
   return (
     <div className="login-wrap">
       <div className="login-card card">
-        <div className="brand brand-lg">
+        <h1 className="brand brand-lg">
           <span className="brand-mark" aria-hidden>
             ◈
           </span>
           FleetGuard
-        </div>
+        </h1>
         <p className="muted">Company-owned device management console</p>
         {err && <ErrorBox>{err}</ErrorBox>}
         {rt.health.sso && (

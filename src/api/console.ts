@@ -315,6 +315,10 @@ export class RemoteConsoleApi implements ConsoleApi {
   async logout() {
     await this.req('POST', '/admin/logout', {});
   }
+  /** The signed-in user, or null — without a 401 when nobody is signed in. */
+  async currentUser(): Promise<PublicUser | null> {
+    return (await this.req<{ user: PublicUser | null }>('GET', '/session')).user;
+  }
   me() {
     return this.req<PublicUser>('GET', '/admin/me');
   }

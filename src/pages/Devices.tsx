@@ -70,7 +70,7 @@ export function DevicesPage() {
         ))}
       </div>
       <div className="toolbar">
-        <input type="search" placeholder="Search name, serial, model, employee…" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search devices" />
+        <input type="search" placeholder="Search devices…" title="Search by name, serial, model or employee" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search devices" />
         {shown.length > 0 && (
           <label className="check small">
             <input

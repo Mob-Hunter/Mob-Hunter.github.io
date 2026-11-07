@@ -25,7 +25,10 @@ jobs:
           TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: |
           if [ -z "$TOKEN" ]; then
-            echo "::notice::CLOUDFLARE_API_TOKEN secret not set; skipping server deploy (deploy with: npx wrangler deploy)."
+            msg="The CLOUDFLARE_API_TOKEN repository secret is not visible to this workflow (Settings -> Secrets and variables -> Actions -> Secrets tab, not Variables)."
+            # A manual run exists to deploy, so it must not pass silently.
+            if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then echo "::error::$msg"; exit 1; fi
+            echo "::notice::$msg Skipping server deploy."
             echo "present=false" >> "$GITHUB_OUTPUT"
           else
             echo "present=true" >> "$GITHUB_OUTPUT"
@@ -48,7 +51,7 @@ jobs:
         run: npx wrangler deploy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
           WRANGLER_SEND_METRICS: 'false'
       - if: steps.cf.outputs.present == 'true'
         run: curl -fsS "$SERVER_URL/api/health"
