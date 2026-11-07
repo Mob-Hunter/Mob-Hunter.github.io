@@ -59,6 +59,8 @@ jobs:
       - name: Agent unit tests + release APKs
         working-directory: android
         run: ./gradlew --no-daemon :agent:testDebugUnitTest :agent:assembleRelease :console:assembleRelease
+      - name: Agent ↔ server interop (real ApiClient against the Worker in workerd)
+        run: android/scripts/interop.sh
       - uses: actions/upload-artifact@v4
         with:
           name: fleetguard-apks

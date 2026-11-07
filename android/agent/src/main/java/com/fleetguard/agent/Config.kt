@@ -7,15 +7,15 @@ import org.json.JSONObject
  * Agent configuration, kept in app-private storage (excluded from backups).
  * Contains no secrets: the private key lives in the Android Keystore.
  */
-class Config(context: Context) {
+class Config(context: Context) : DeviceCredentials {
     private val p = context.applicationContext.getSharedPreferences("fleetguard", Context.MODE_PRIVATE)
 
-    var apiBase: String? by pref("apiBase")
+    override var apiBase: String? by pref("apiBase")
     var enrollToken: String? by pref("enrollToken")
     var serverPin: String? by pref("serverPin")
-    var deviceId: String? by pref("deviceId")
-    var certJson: String? by pref("certJson")
-    var certSig: String? by pref("certSig")
+    override var deviceId: String? by pref("deviceId")
+    override var certJson: String? by pref("certJson")
+    override var certSig: String? by pref("certSig")
     var serverPublicKey: String? by pref("serverPublicKey")
     var transparencyPath: String? by pref("transparencyPath")
     var noticeJson: String? by pref("noticeJson")

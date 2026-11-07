@@ -1,6 +1,5 @@
 package com.fleetguard.agent
 
-import android.util.Base64
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
@@ -16,7 +15,20 @@ class ApiException(val status: Int, val code: String, message: String) : IOExcep
  * signature (Keystore key) over METHOD \n PATH \n ts \n nonce \n sha256(raw body).
  * HTTPS only; the server's command-signing key is pinned separately.
  */
-class ApiClient(private val config: Config) {
+/** What the client needs to know about the enrolled device (implemented by [Config]). */
+interface DeviceCredentials {
+    val apiBase: String?
+    val deviceId: String?
+    val certJson: String?
+    val certSig: String?
+}
+
+/**
+ * Pure-JVM (no android.* imports) so the real client is exercised against a live
+ * server by InteropTest. [signer] produces the hex DER ECDSA signature — the
+ * Android Keystore key in the app.
+ */
+class ApiClient(private val config: DeviceCredentials, private val signer: (String) -> String = DeviceKey::sign) {
     private val rng = SecureRandom()
 
     private fun open(path: String, method: String): HttpURLConnection {
@@ -59,12 +71,12 @@ class ApiClient(private val config: Config) {
         val message = "${method}\n${path}\n${ts}\n${nonce}\n${bodyHash}"
         val c = open(path, method)
         c.setRequestProperty("X-FG-Device", config.deviceId)
-        c.setRequestProperty("X-FG-Cert", Base64.encodeToString(config.certJson!!.toByteArray(Charsets.UTF_8), Base64.NO_WRAP))
+        c.setRequestProperty("X-FG-Cert", java.util.Base64.getEncoder().encodeToString(config.certJson!!.toByteArray(Charsets.UTF_8)))
         c.setRequestProperty("X-FG-Cert-Sig", config.certSig)
         c.setRequestProperty("X-FG-Ts", ts.toString())
         c.setRequestProperty("X-FG-Nonce", nonce)
         c.setRequestProperty("X-FG-Body-SHA256", bodyHash)
-        c.setRequestProperty("X-FG-Sig", DeviceKey.sign(message))
+        c.setRequestProperty("X-FG-Sig", signer(message))
         if (body != null) {
             c.doOutput = true
             c.setRequestProperty("Content-Type", "application/json")

@@ -61,6 +61,10 @@ A sideloaded agent (installed from the APK link) is an ordinary app without devi
 | Wipe | Reports success first, destroys the key and config, then calls `wipeDevice`/`wipeData` |
 | Not present | No remote shell, screen capture or accessibility service. No SMS, contacts, call log, media or storage permissions |
 
+## Interop test (agent ↔ real server)
+
+`scripts/interop.sh` starts the Worker in `workerd` with fresh storage and runs `InteropTest` on the JVM. The test drives the agent's **real** `ApiClient` and `CommandVerifier` through the whole flow: enrolment with the server-key pin, DER-signed requests over raw-body hashes, check-in with acknowledgement, a signed LOCATE verified with Tink, tamper and replay rejection, the location result, the audit chain, and rejection of a forged key. CI runs it on every pull request. A software P-256 key stands in for the Keystore key; both produce the same DER `SHA256withECDSA` signatures.
+
 ## Not yet verified
 
-These APKs compile, their unit tests pass, and they are checked with `apksigner`/`aapt2`. They have **not** been run on a physical phone in this environment, because no device or emulator was available. Run the pilot checklist in `docs/DEPLOYMENT.md` on real hardware before rollout. Play Integrity is reported as `NOT_EVALUATED` until you connect a Google Cloud project.
+These APKs compile, their unit tests and the interop test above pass, and they are checked with `apksigner`/`aapt2`. The Android-only parts have **not** been run on a phone or emulator yet, because no device was available. Those parts are the provisioning screens, DevicePolicyManager calls, Keystore, FusedLocation, notifications, Lost Mode lock task and PackageInstaller. Run the pilot checklist in `docs/DEPLOYMENT.md` on real hardware before rollout. Play Integrity is reported as `NOT_EVALUATED` until you connect a Google Cloud project.
