@@ -33,7 +33,7 @@ export const RISKS: Risk[] = [
     issue: 'Insider misuse by administrators',
     why: 'A console that can locate or wipe phones can be abused (e.g. to follow a colleague).',
     fix: [
-      'Segregate duties: only the Location Operator can locate; Super Admin cannot see location.',
+      'Limit location access to the Location Operator and the Super Admin (who holds every permission); keep Super Admins to a minimum.',
       'Four-eyes approval for wipes; nobody can change their own role.',
       'Security reviews location-access reports monthly; misuse is a disciplinary matter written into the policy.',
     ],

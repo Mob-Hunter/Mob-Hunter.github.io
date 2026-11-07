@@ -4,10 +4,11 @@ import { setup } from './helpers';
 const report = { kind: 'stolen' as const, ticket: 'INC-900', reason: 'Phone taken from car, police ref 2026/1123', intervalSec: 60, durationHours: 4, message: 'Stolen phone — call', phone: '+94 11 000 0000' };
 
 describe('lost / stolen incidents with active tracking', () => {
-  it('only the Location Operator can report; ticket, reason, interval and duration are validated; notice must be acknowledged', async () => {
+  it('only the Location Operator and Super Admin can report; ticket, reason, interval and duration are validated; notice must be acknowledged', async () => {
     const { backend, signIn, enrolledAgent } = await setup();
     const { deviceId } = await enrolledAgent();
-    for (const role of ['SUPER_ADMIN', 'DEVICE_ADMIN', 'HELPDESK', 'SECURITY', 'AUDITOR']) {
+    await expect(backend.reportIncident(await signIn('SUPER_ADMIN'), deviceId, { ...report, ticket: '' })).rejects.toMatchObject({ code: 'ticket_required' });
+    for (const role of ['DEVICE_ADMIN', 'HELPDESK', 'SECURITY', 'AUDITOR']) {
       await expect(backend.reportIncident(await signIn(role), deviceId, report)).rejects.toMatchObject({ status: 403 });
     }
     const op = await signIn('LOCATION_OPERATOR');

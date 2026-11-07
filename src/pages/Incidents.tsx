@@ -45,7 +45,7 @@ export function IncidentsPage() {
     <div className="page">
       <h1>Lost &amp; stolen</h1>
       <div className="callout">
-        Report a device lost or stolen from its device page (Location Operator). Active tracking takes a fix every 1–5 minutes for a limited time, the employee sees a
+        Report a device lost or stolen from its device page (Location Operator or Super Admin). Active tracking takes a fix every 1–5 minutes for a limited time, the employee sees a
         persistent notice the whole time, and every viewing session is audited.
       </div>
       {err && <ErrorBox>{err}</ErrorBox>}
@@ -102,7 +102,7 @@ export function IncidentDetailPage() {
             <TrackingState i={summary} now={Date.now()} />
           </Card>
         )}
-        <div className="callout">Live position is visible only to the Location Operator role.</div>
+        <div className="callout">Live position is visible only to the Location Operator and Super Admin roles.</div>
       </div>
     );
   }

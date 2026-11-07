@@ -58,12 +58,12 @@ export function defaultPolicy(): DevicePolicy {
 
 /** Policy text the employee acknowledges at enrolment (Non-negotiable #1). */
 export const COLLECTION_NOTICE = {
-  version: '2026-11-v1',
+  version: '2026-11-v2',
   title: 'Company device notice',
   collected: [
     'Device identifiers: serial number, model, OS version and security patch level.',
     'Device health: battery level, health and temperature; free storage; Play Integrity verdict.',
-    'Location — only when a Location Operator requests it against a ticket (you get a notification every time), while the device is in Lost Mode, or, if your policy enables it, every 15+ minutes during working hours with a persistent notification.',
+    'Location — only when a Location Operator or the Super Admin requests it against a ticket (you get a notification every time), while the device is in Lost Mode, or, if your policy enables it, every 15+ minutes during working hours with a persistent notification.',
     'The list of company apps installed by the management service.',
   ],
   notCollected: [

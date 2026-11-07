@@ -174,12 +174,12 @@ function OperatorDeviceLocation({ deviceId }: { deviceId: string }) {
 
 function RestrictedLocation({ commands, lostMode }: { commands: Command[] | null; lostMode: boolean }) {
   const [users] = useQuery((api) => api.listUsers(), [], { live: false });
-  const operators = (users ?? []).filter((u) => u.role === 'LOCATION_OPERATOR' && !u.disabled);
+  const operators = (users ?? []).filter((u) => (u.role === 'LOCATION_OPERATOR' || u.role === 'SUPER_ADMIN') && !u.disabled);
   const lastRequest = (commands ?? []).find((c) => c.type === 'LOCATE' || c.type === 'LOST_MODE_ON');
   return (
     <Card title="Location">
       <div className="callout">
-        <strong>Restricted.</strong> Device location is visible only to the {ROLE_LABEL.LOCATION_OPERATOR} role, only against a ticket, and every view is audited.
+        <strong>Restricted.</strong> Device location is visible only to the {ROLE_LABEL.LOCATION_OPERATOR} and {ROLE_LABEL.SUPER_ADMIN} roles, only against a ticket, and every view is audited.
         {operators.length > 0 && <> Ask {joinNames(operators.map((o) => o.name))}.</>}
       </div>
       <dl className="kv">

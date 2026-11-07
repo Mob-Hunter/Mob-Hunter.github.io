@@ -14,7 +14,7 @@ const TICKET_RE = /^[A-Z][A-Z0-9]{1,9}-\d{1,8}$/;
 export function LocationsPage() {
   const canRead = useCan('location.read');
   const canPurge = useCan('location.purge');
-  if (!canRead && !canPurge) return <ErrorBox>Location data is only available to the Location Operator role.</ErrorBox>;
+  if (!canRead && !canPurge) return <ErrorBox>Location data is only available to the Location Operator and Super Admin roles.</ErrorBox>;
   return (
     <div className="page">
       <h1>Locations</h1>

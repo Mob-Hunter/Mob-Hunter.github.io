@@ -63,7 +63,7 @@ export function RolesPage() {
           </table>
         </TableWrap>
         <p className="tiny muted">
-          Segregation of duties: Super Admin cannot see location; only the Location Operator can, and only against a ticket. Wipes need a second approver. Nobody can
+          Super Admin holds every permission. Location is limited to the Location Operator and Super Admin, always against a ticket, with the employee notified. Wipes need a second approver. Nobody can
           change their own role.
         </p>
       </Card>
