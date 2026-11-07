@@ -11,6 +11,7 @@ import { CompliancePage } from './pages/Compliance';
 import { EnrolPage } from './pages/Enrol';
 import { InstallPage } from './pages/Install';
 import { LocationsPage } from './pages/Locations';
+import { IncidentDetailPage, IncidentsPage } from './pages/Incidents';
 import { EmployeesPage } from './pages/Employees';
 import { UsersPage } from './pages/Users';
 import { AuditPage } from './pages/Audit';
@@ -26,6 +27,7 @@ const NAV: NavItem[] = [
   { to: '/devices', label: 'Devices', icon: '▤' },
   { to: '/compliance', label: 'Compliance', icon: '✓' },
   { to: '/enrol', label: 'Add devices', icon: '＋', perm: 'enrollment.create' },
+  { to: '/incidents', label: 'Lost & stolen', icon: '⚑' },
   { to: '/locations', label: 'Locations', icon: '⌖', anyOf: ['location.read', 'location.purge'] },
   { to: '/employees', label: 'Employees', icon: '☺' },
   { to: '/users', label: 'Users & access', icon: '⚿', anyOf: ['users.manage', 'sessions.manage'] },
@@ -127,6 +129,8 @@ export function App() {
         <Route path="/compliance" element={guarded(<CompliancePage />)} />
         <Route path="/enrol" element={guarded(<EnrolPage />)} />
         <Route path="/locations" element={guarded(<LocationsPage />)} />
+        <Route path="/incidents" element={guarded(<IncidentsPage />)} />
+        <Route path="/incidents/:id" element={guarded(<IncidentDetailPage />)} />
         <Route path="/employees" element={guarded(<EmployeesPage />)} />
         <Route path="/users" element={guarded(<UsersPage />)} />
         <Route path="/audit" element={guarded(<AuditPage />)} />

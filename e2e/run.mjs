@@ -171,6 +171,30 @@ try {
   assert.ok(await page.locator('.list li', { hasText: "Nimal's field phone" }).count() > 0);
   assert.ok((await page.locator('table tbody tr', { hasText: 'INC-1001' }).count()) >= 2);
   ok('Locations workspace: seeded ticket INC-1001 shows fleet map, latest position per device and history');
+
+  // Lost / stolen incident with active tracking
+  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Devices', exact: true }).click();
+  await page.getByRole('heading', { name: 'Devices', exact: true }).waitFor();
+  await page.getByRole('link', { name: "Nimal's field phone" }).click();
+  await page.getByRole('heading', { name: 'Report lost or stolen' }).waitFor();
+  await page.getByLabel('Report as').selectOption('stolen');
+  await page.getByLabel('Incident ticket').fill('INC-3001');
+  await page.getByLabel('Tracking interval').selectOption('60');
+  await page.getByLabel('Tracking duration').selectOption('4');
+  await page.getByLabel('What happened (justification for tracking)').fill('Phone taken from a parked car, police ref 2026/1123');
+  await page.getByRole('button', { name: /Report stolen & start tracking/ }).click();
+  await page.waitForURL(/#\/incidents\/inc_/);
+  await page.getByText(/Tracking every 1 min/).first().waitFor();
+  await page.getByText('Stolen device:').waitFor();
+  await page.getByRole('img', { name: /Live track with \d+ location fixes/ }).waitFor({ timeout: 30_000 });
+  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: /Lost & stolen/ }).click();
+  await page.getByRole('heading', { name: /Open incidents \(1\)/ }).waitFor();
+  await page.getByRole('link', { name: "Nimal's field phone" }).click();
+  await page.getByLabel('Outcome').selectOption('recovered');
+  await page.getByRole('button', { name: 'Close incident' }).click();
+  await page.locator('.toast-ok', { hasText: 'Lost Mode ended' }).waitFor();
+  await page.getByText(/Closed as/).waitFor({ timeout: 20_000 });
+  ok('stolen report → live tracking page with map → listed under Lost & stolen → closed as recovered');
   await signOut();
 
   // Audit chain verifies

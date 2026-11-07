@@ -47,6 +47,17 @@ Deleting a device record erases its command history and encrypted location data,
 Deleting an active device returns the phone to the employee as an unmanaged phone with the agent uninstalled. Make sure that is the intended outcome: for a company phone being returned, or one that might hold company data, **wipe** it instead.
 **Built in:** release needs Super Admin or Device Admin, a reason and a typed `DELETE`. The employee is told the phone is no longer managed, and the request, the phone's confirmation and the deletion are all audited. A pending release can be cancelled. If your policy demands it, add a second approver as is already done for WIPE; the hook is `DUAL_CONTROL` in `src/core/rbac.ts`.
 
+### Active tracking of lost or stolen devices
+High-frequency tracking is the most intrusive location feature, so it is tightly bounded.
+**Built in:**
+- Location Operator only, with a ticket and a written justification.
+- At most 72 hours at a time. The end time is signed into the command and enforced by the phone itself, and every extension needs a reason and is audited.
+- The employee sees a persistent notice saying how often and until when.
+- Low battery slows tracking to 5 minutes.
+- Fixes are filed under the incident's ticket. Live viewing sessions are audited.
+- The incident closes automatically if Lost Mode ends or the phone is wiped, retired or deleted.
+- For stolen phones the console warns staff to share the location with the police rather than attempt recovery themselves; tell staff this in your runbook too.
+
 ### Purpose limitation for location views
 Viewing location under ticket X should show the fixes collected for ticket X, not everything.
 **Built in:** "Only fixes recorded under this ticket" is on by default. Lost Mode fixes are filed under the ticket that turned Lost Mode on. Widening a view is a deliberate choice, and the audit row records which filter was used.

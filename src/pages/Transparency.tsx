@@ -17,7 +17,14 @@ export function TransparencyPage() {
             <Card title={q.data.deviceName}>
               <ul className="checklist">
                 <li className={q.data.acknowledgedAt ? 'yes' : 'no'}>Notice acknowledged {q.data.acknowledgedAt ? fmtTime(q.data.acknowledgedAt) : '— not yet'}</li>
-                <li className={q.data.lostMode ? 'yes' : 'no'}>Lost Mode {q.data.lostMode ? 'is ON — location is shared every 5 minutes' : 'is off'}</li>
+                <li className={q.data.lostMode ? 'yes' : 'no'}>
+                  Lost Mode{' '}
+                  {q.data.lostMode
+                    ? q.data.tracking
+                      ? `is ON — the phone was reported ${q.data.tracking.kind} and is tracked every ${Math.round(q.data.tracking.intervalSec / 60)} min until ${fmtTime(q.data.tracking.until)}`
+                      : 'is ON — location is shared every 5 minutes'
+                    : 'is off'}
+                </li>
                 <li className={q.data.continuousLocation ? 'yes' : 'no'}>Work-hours location sharing {q.data.continuousLocation ? 'is ON (with a persistent notification)' : 'is off'}</li>
               </ul>
             </Card>

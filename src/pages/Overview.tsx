@@ -34,10 +34,10 @@ export function OverviewPage() {
             <span className="stat-n">{stats.awaitingAck}</span>
             <span className="stat-l">Awaiting notice ack</span>
           </div>
-          <div className="stat">
+          <Link to="/incidents" className="stat">
             <span className="stat-n">{stats.lost}</span>
-            <span className="stat-l">In Lost Mode</span>
-          </div>
+            <span className="stat-l">Lost / stolen</span>
+          </Link>
           <div className="stat">
             <span className="stat-n">{stats.pendingApprovals}</span>
             <span className="stat-l">Awaiting approval</span>

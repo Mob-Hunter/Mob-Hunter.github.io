@@ -42,7 +42,7 @@ class AgentService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val c = Config(this)
         val (channel, title, text) = if (c.lostMode) {
-            Triple(Notifier.CH_LOST, "Lost Mode is on", "Your organisation can see this device's location every 5 minutes until Lost Mode ends.")
+            Triple(Notifier.CH_LOST, "Lost Mode is on", Tracking.noticeText(c, null))
         } else {
             Triple(Notifier.CH_CONTINUOUS, "Work location sharing is on", "Location is shared during working hours. Tap for details.")
         }
@@ -53,6 +53,12 @@ class AgentService : Service() {
                 if (!needed(this@AgentService)) {
                     stopSelf()
                     return
+                }
+                val cfg = Config(this@AgentService)
+                // While actively tracked, check in every 2 minutes so "found" / new limits arrive quickly even without push.
+                if (cfg.trackingActive && System.currentTimeMillis() - cfg.lastTrackingSyncAt >= 120_000) {
+                    cfg.lastTrackingSyncAt = System.currentTimeMillis()
+                    Agent(this@AgentService).sync()
                 }
                 Agent(this@AgentService).periodicLocation()
                 handler.postDelayed(this, 60_000) // checks each minute; fixes follow the 5-min / ≥15-min cadence

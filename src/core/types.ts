@@ -208,6 +208,28 @@ export interface StoredLocation {
   sealed: Sealed;
 }
 
+/** A device reported lost or stolen, with time-boxed active tracking. */
+export interface Incident {
+  id: string;
+  deviceId: string;
+  kind: 'lost' | 'stolen';
+  ticket: string;
+  reason: string;
+  reportedBy: string;
+  startedAt: number;
+  /** fix interval while active tracking runs (60–300 s) */
+  trackingIntervalSec: number;
+  /** active tracking stops on the phone at this time (≤ 72 h from the last extension) */
+  trackingUntil: number;
+  status: 'active' | 'resolved';
+  resolution?: 'found' | 'recovered' | 'not_recovered' | 'false_alarm';
+  resolvedBy?: string;
+  resolvedAt?: number;
+  note?: string;
+  /** throttles "tracking viewed" audit rows: userId → last audited view */
+  viewAudit?: Record<string, number>;
+}
+
 export interface PushWake {
   id: string;
   deviceId: string;
@@ -241,6 +263,7 @@ export interface BackendState {
   audit: AuditRow[];
   lastPurgeAt: number | null;
   settings?: OrgSettings;
+  incidents?: Incident[];
 }
 
 export interface DeviceAuth {

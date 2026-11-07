@@ -42,7 +42,11 @@ class CommandExecutor(private val ctx: Context, private val config: Config, priv
                 "LOST_MODE_ON" -> {
                     config.lostMode = true
                     config.lostMessage = listOf(params.optString("message"), params.optString("phone")).filter { it.isNotBlank() }.joinToString("\n")
-                    val text = "Your organisation put this device in Lost Mode (ticket $ticket). Its location is shared every 5 minutes until Lost Mode ends."
+                    // Active tracking limits are part of the signed command; the phone enforces the end time itself.
+                    config.trackingIntervalSec = params.optInt("trackingIntervalSec", 0).let { if (it == 0) 0 else it.coerceIn(60, 300) }
+                    config.trackingUntil = params.optLong("trackingUntil", 0)
+                    config.incidentKind = params.optStr("kind")
+                    val text = Tracking.noticeText(config, ticket)
                     val shown = Notifier.post(ctx, Notifier.CH_LOST, "Lost Mode is on", text, ongoing = true, id = Notifier.ID_FOREGROUND)
                     runCatching { dpm.setLockTaskPackages(admin, arrayOf(ctx.packageName)) }
                     ctx.startActivity(Intent(ctx, LostModeActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
@@ -52,6 +56,9 @@ class CommandExecutor(private val ctx: Context, private val config: Config, priv
                 }
                 "LOST_MODE_OFF" -> {
                     config.lostMode = false
+                    config.trackingIntervalSec = 0
+                    config.trackingUntil = 0
+                    config.incidentKind = null
                     ctx.sendBroadcast(Intent(LostModeActivity.ACTION_EXIT).setPackage(ctx.packageName))
                     Notifier.cancel(ctx, Notifier.ID_FOREGROUND)
                     Notifier.post(ctx, Notifier.CH_MANAGEMENT, "Lost Mode ended", "Location sharing for Lost Mode has stopped.")

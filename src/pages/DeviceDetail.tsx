@@ -27,6 +27,7 @@ export function DeviceDetailPage() {
   const canUpdate = useCan('device.update');
   const canRetire = useCan('device.retire');
   const canDelete = useCan('device.delete');
+  const canReportLost = useCan('command.LOST_MODE_ON');
   if (err && !device) return <ErrorBox>{err}</ErrorBox>;
   if (!device) return null;
   // RELEASE is only sent by the delete flow, never from the generic command form.
@@ -42,6 +43,19 @@ export function DeviceDetailPage() {
         {stateBadge(device)}
       </div>
 
+      {device.activeIncident && (
+        <div className={`callout ${device.activeIncident.kind === 'stolen' ? 'callout-bad' : 'callout-warn'}`}>
+          <strong>Reported {device.activeIncident.kind}</strong> ({device.activeIncident.ticket}) {fmtAgo(device.activeIncident.startedAt)}.{' '}
+          {device.activeIncident.trackingUntil > Date.now() ? (
+            <>
+              Active tracking every {Math.round(device.activeIncident.trackingIntervalSec / 60)} min until {fmtTime(device.activeIncident.trackingUntil)}.
+            </>
+          ) : (
+            <>Active tracking has ended; Lost Mode is on.</>
+          )}{' '}
+          <Link to={`/incidents/${device.activeIncident.id}`}>Open incident →</Link>
+        </div>
+      )}
       <div className="grid2">
         <Card title="Device">
           <dl className="kv">
@@ -138,6 +152,9 @@ export function DeviceDetailPage() {
         )}
       </Card>
 
+      {canReportLost && !device.activeIncident && device.state !== 'wiped' && device.state !== 'retired' && !device.pendingRemoval && (
+        <ReportIncidentCard deviceId={device.id} acknowledged={!!device.policyAckAt} />
+      )}
       <PolicyCard deviceId={device.id} policy={device.policy} />
       <DeviceLocationPanel deviceId={device.id} commands={commands} lostMode={device.lostMode} />
       {canRetire && device.state !== 'retired' && device.state !== 'wiped' && <RetireCard deviceId={device.id} />}
@@ -421,6 +438,79 @@ function RemovalPendingCard({ device }: { device: import('../core/backend').Devi
       <button className="btn" disabled={busy} onClick={() => void run(() => rt.api.cancelRemoval(device.id), 'Removal cancelled — the device stays managed')}>
         Cancel removal
       </button>
+    </Card>
+  );
+}
+
+/** Report lost or stolen: Lost Mode + time-boxed active tracking (Location Operator). */
+function ReportIncidentCard({ deviceId, acknowledged }: { deviceId: string; acknowledged: boolean }) {
+  const rt = useRuntime();
+  const nav = useNavigate();
+  const { run, busy } = useAction();
+  const [f, setF] = useState({ kind: 'lost' as 'lost' | 'stolen', ticket: '', reason: '', intervalSec: 120, durationHours: 24, message: 'This phone belongs to the company. Please call the number below.', phone: '' });
+  return (
+    <Card title="Report lost or stolen">
+      {!acknowledged ? (
+        <p className="small muted">The employee has not acknowledged the device notice yet, so location cannot be collected.</p>
+      ) : (
+        <form
+          className="stack"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void run(async () => {
+              const inc = await rt.api.reportIncident(deviceId, { ...f, ticket: f.ticket.trim().toUpperCase() });
+              nav(`/incidents/${inc.id}`);
+              return inc;
+            }, 'Reported — Lost Mode and active tracking sent to the phone');
+          }}
+        >
+          <p className="small muted">
+            Turns on Lost Mode (locked screen with your message) and tracks the phone every 1–5 minutes for a limited time. The employee sees a persistent notice saying
+            how often and until when; tracking stops on the phone by itself when the time is up.
+          </p>
+          <div className="row-form">
+            <Field label="Report as">
+              <select value={f.kind} onChange={(e) => setF({ ...f, kind: e.target.value as 'lost' | 'stolen' })}>
+                <option value="lost">Lost</option>
+                <option value="stolen">Stolen</option>
+              </select>
+            </Field>
+            <Field label="Incident ticket" hint="e.g. INC-1042">
+              <input value={f.ticket} onChange={(e) => setF({ ...f, ticket: e.target.value })} required pattern="[A-Za-z][A-Za-z0-9]{1,9}-\d{1,8}" />
+            </Field>
+            <Field label="Tracking interval">
+              <select value={f.intervalSec} onChange={(e) => setF({ ...f, intervalSec: Number(e.target.value) })}>
+                <option value={60}>1 minute</option>
+                <option value={120}>2 minutes</option>
+                <option value={300}>5 minutes</option>
+              </select>
+            </Field>
+            <Field label="Tracking duration">
+              <select value={f.durationHours} onChange={(e) => setF({ ...f, durationHours: Number(e.target.value) })}>
+                <option value={4}>4 hours</option>
+                <option value={24}>24 hours</option>
+                <option value={72}>72 hours (maximum)</option>
+              </select>
+            </Field>
+          </div>
+          <Field label="What happened (justification for tracking)">
+            <textarea value={f.reason} onChange={(e) => setF({ ...f, reason: e.target.value })} required minLength={5} rows={2} placeholder="e.g. Employee reports phone taken from car, police report 2026/1123" />
+          </Field>
+          <div className="row-form">
+            <Field label="Lost Mode message">
+              <input value={f.message} onChange={(e) => setF({ ...f, message: e.target.value })} maxLength={200} />
+            </Field>
+            <Field label="Contact phone">
+              <input value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} maxLength={24} placeholder="+94 11 000 0000" />
+            </Field>
+          </div>
+          <div>
+            <button className="btn btn-danger" disabled={busy}>
+              Report {f.kind} &amp; start tracking
+            </button>
+          </div>
+        </form>
+      )}
     </Card>
   );
 }

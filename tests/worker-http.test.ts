@@ -283,6 +283,36 @@ describe('Worker HTTP API', () => {
     expect((await ctx.admin('GET', '/admin/audit/verify', undefined, 'sa')).json.ok).toBe(true);
   });
 
+  it('lost/stolen incident over HTTP: report, live track, update, resolve', async () => {
+    const ctx = await bootstrapped();
+    const opSecret = await ctx.mk('LOCATION_OPERATOR', 'op3@corp.test');
+    await ctx.signIn('op3@corp.test', opSecret, 'op');
+    const e = await ctx.admin('POST', '/admin/enrollments', {}, 'sa');
+    const fetcher = ((url: string, init?: RequestInit) => ctx.app.request(new URL(url).pathname + new URL(url).search, init)) as unknown as typeof fetch;
+    const agent = new SimulatedAgent(newAgentFromProvisioning(e.json.provisioning), new HttpDeviceTransport('https://fleet.test', fetcher));
+    await agent.enroll();
+    agent.acknowledge();
+    await agent.checkin();
+    const id = agent.state.deviceId!;
+    const body = { kind: 'lost', ticket: 'INC-71', reason: 'Lost on the train home', intervalSec: 120, durationHours: 24 };
+    expect((await ctx.admin('POST', `/admin/devices/${id}/incidents`, body, 'sa')).status).toBe(403);
+    const inc = await ctx.admin('POST', `/admin/devices/${id}/incidents`, body, 'op');
+    expect(inc.status).toBe(201);
+    await agent.poll();
+    expect(agent.state.tracking).toMatchObject({ intervalSec: 120, kind: 'lost' });
+    const track = await ctx.admin('GET', `/admin/incidents/${inc.json.id}/track`, undefined, 'op');
+    expect(track.json).toMatchObject({ trackingActive: true, incident: { ticket: 'INC-71' } });
+    expect(track.json.fixes).toHaveLength(1);
+    expect((await ctx.admin('GET', `/admin/incidents/${inc.json.id}/track`, undefined, 'sa')).status).toBe(403);
+    expect((await ctx.admin('GET', '/admin/incidents', undefined, 'sa')).json[0]).toMatchObject({ status: 'active', kind: 'lost' });
+    const up = await ctx.admin('POST', `/admin/incidents/${inc.json.id}/tracking`, { intervalSec: 60, reason: 'Phone is moving, need more detail' }, 'op');
+    expect(up.json.trackingIntervalSec).toBe(60);
+    const done = await ctx.admin('POST', `/admin/incidents/${inc.json.id}/resolve`, { resolution: 'found', note: 'Returned by station staff' }, 'op');
+    expect(done.json).toMatchObject({ status: 'resolved', resolution: 'found' });
+    await agent.poll();
+    expect(agent.state.lostMode).toBe(false);
+  });
+
   it('Cloudflare Access SSO: verified e-mail maps to a provisioned user only', async () => {
     const kp = (await crypto.subtle.generateKey({ name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' }, true, ['sign', 'verify'])) as CryptoKeyPair;
     const jwk = (await crypto.subtle.exportKey('jwk', kp.publicKey)) as JsonWebKey;

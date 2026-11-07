@@ -174,6 +174,11 @@ export function createApp(cfg: HttpConfig) {
     const b = await body<{ patch: Parameters<Backend['updatePolicy']>[2]; justification: string }>(c);
     return c.json(await c.var.backend.updatePolicy(c.var.sid, c.req.param('id'), b.patch ?? {}, b.justification));
   });
+  app.post('/admin/devices/:id/incidents', async (c) => c.json(await c.var.backend.reportIncident(c.var.sid, c.req.param('id'), await body(c)), 201));
+  app.get('/admin/incidents', (c) => c.json(c.var.backend.listIncidents(c.var.sid)));
+  app.get('/admin/incidents/:id/track', async (c) => c.json(await c.var.backend.trackIncident(c.var.sid, c.req.param('id'))));
+  app.post('/admin/incidents/:id/tracking', async (c) => c.json(await c.var.backend.updateIncidentTracking(c.var.sid, c.req.param('id'), await body(c))));
+  app.post('/admin/incidents/:id/resolve', async (c) => c.json(await c.var.backend.resolveIncident(c.var.sid, c.req.param('id'), await body(c))));
   app.post('/admin/devices/:id/cancel-removal', async (c) => c.json(await c.var.backend.cancelRemoval(c.var.sid, c.req.param('id'))));
   app.post('/admin/devices/:id/delete', async (c) => c.json(await c.var.backend.deleteDevice(c.var.sid, c.req.param('id'), await body(c))));
   app.post('/admin/devices/:id/retire', async (c) => c.json(await c.var.backend.retireDevice(c.var.sid, c.req.param('id'), (await body<{ reason: string }>(c)).reason)));

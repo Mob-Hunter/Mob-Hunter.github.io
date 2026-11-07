@@ -21,6 +21,10 @@ export type Enrollment = Awaited<ReturnType<Backend['createEnrollment']>>;
 export type PolicyPatch = Parameters<Backend['updatePolicy']>[2];
 export type LocationTicket = ReturnType<Backend['listLocationTickets']>[number];
 export type DeleteResult = Awaited<ReturnType<Backend['deleteDevice']>>;
+export type IncidentSummary = ReturnType<Backend['listIncidents']>[number];
+export type IncidentTrack = Awaited<ReturnType<Backend['trackIncident']>>;
+export type ReportIncidentInput = Parameters<Backend['reportIncident']>[2];
+export type IncidentRecord = Awaited<ReturnType<Backend['reportIncident']>>;
 export type LocationFilter = { deviceId?: string; ticket: string; tier?: 1 | 2 | 3; sinceMs?: number; onlyTicket?: boolean };
 export type Health = { service: 'fleetguard'; mode: 'demo' | 'server'; version: string; needsBootstrap: boolean; sso: boolean };
 export type { ComplianceIssue, DeviceView, LocationView, Notice };
@@ -45,6 +49,12 @@ export interface ConsoleApi {
   retireDevice(id: string, reason: string): Promise<DeviceView>;
   deleteDevice(id: string, input: { reason: string; confirm: string }): Promise<DeleteResult>;
   cancelRemoval(id: string): Promise<DeviceView>;
+  // lost / stolen incidents
+  reportIncident(deviceId: string, input: ReportIncidentInput): Promise<IncidentRecord>;
+  listIncidents(): Promise<IncidentSummary[]>;
+  trackIncident(id: string): Promise<IncidentTrack>;
+  updateIncidentTracking(id: string, input: { extendHours?: number; intervalSec?: number; reason: string }): Promise<IncidentRecord>;
+  resolveIncident(id: string, input: { resolution: IncidentRecord['resolution']; note?: string }): Promise<IncidentRecord>;
   compliance(): Promise<{ deviceId: string; deviceName: string; issues: ComplianceIssue[] }[]>;
   // commands
   issueCommand(deviceId: string, input: { type: CommandType; ticket?: string; reason?: string; params?: Record<string, unknown> }): Promise<Command>;
@@ -147,6 +157,21 @@ export class LocalConsoleApi implements ConsoleApi {
   }
   cancelRemoval(id: string) {
     return this.b.cancelRemoval(this.s, id);
+  }
+  reportIncident(deviceId: string, input: ReportIncidentInput) {
+    return this.b.reportIncident(this.s, deviceId, input);
+  }
+  async listIncidents() {
+    return this.b.listIncidents(this.s);
+  }
+  trackIncident(id: string) {
+    return this.b.trackIncident(this.s, id);
+  }
+  updateIncidentTracking(id: string, input: { extendHours?: number; intervalSec?: number; reason: string }) {
+    return this.b.updateIncidentTracking(this.s, id, input);
+  }
+  resolveIncident(id: string, input: { resolution: IncidentRecord['resolution']; note?: string }) {
+    return this.b.resolveIncident(this.s, id, input);
   }
   async compliance() {
     return this.b.compliance(this.s);
@@ -319,6 +344,21 @@ export class RemoteConsoleApi implements ConsoleApi {
   }
   cancelRemoval(id: string) {
     return this.req<DeviceView>('POST', `/admin/devices/${encodeURIComponent(id)}/cancel-removal`, {});
+  }
+  reportIncident(deviceId: string, input: ReportIncidentInput) {
+    return this.req<IncidentRecord>('POST', `/admin/devices/${encodeURIComponent(deviceId)}/incidents`, input);
+  }
+  listIncidents() {
+    return this.req<IncidentSummary[]>('GET', '/admin/incidents');
+  }
+  trackIncident(id: string) {
+    return this.req<IncidentTrack>('GET', `/admin/incidents/${encodeURIComponent(id)}/track`);
+  }
+  updateIncidentTracking(id: string, input: { extendHours?: number; intervalSec?: number; reason: string }) {
+    return this.req<IncidentRecord>('POST', `/admin/incidents/${encodeURIComponent(id)}/tracking`, input);
+  }
+  resolveIncident(id: string, input: { resolution: IncidentRecord['resolution']; note?: string }) {
+    return this.req<IncidentRecord>('POST', `/admin/incidents/${encodeURIComponent(id)}/resolve`, input);
   }
   compliance() {
     return this.req<{ deviceId: string; deviceName: string; issues: ComplianceIssue[] }[]>('GET', '/admin/compliance');

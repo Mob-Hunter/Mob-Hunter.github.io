@@ -295,3 +295,9 @@ input[type='file'] { min-height: 0; padding: 6px; }
 .dot.pin-t3 { background: var(--warn); }
 .dot-acc { background: color-mix(in srgb, var(--accent) 25%, transparent); border: 1px solid var(--accent); }
 .danger-zone { border-color: var(--bad); }
+.callout-warn { background: var(--warn-bg); }
+.live { display: inline-flex; align-items: center; gap: 6px; font-size: .85rem; font-weight: 600; color: var(--bad); }
+.live-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--bad); box-shadow: 0 0 0 0 color-mix(in srgb, var(--bad) 60%, transparent); animation: pulse 1.6s infinite; }
+@keyframes pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--bad) 55%, transparent); } 70% { box-shadow: 0 0 0 9px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
+@media (prefers-reduced-motion: reduce) { .live-dot { animation: none; } }
+.page-head h1 .badge { vertical-align: middle; font-size: .8rem; }

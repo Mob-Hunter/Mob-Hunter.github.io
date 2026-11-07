@@ -49,6 +49,7 @@ import type {
   DevicePolicy,
   Employee,
   EnrollmentToken,
+  Incident,
   AppCatalogEntry,
   OrgSettings,
   LocationFix,
@@ -141,6 +142,8 @@ export interface DeviceView extends Omit<Device, 'transparencyKey' | 'cert'> {
   certNotAfter: number;
   assignedUser: Employee | null;
   queuedCommands: number;
+  /** open lost/stolen incident (no coordinates) */
+  activeIncident: Pick<Incident, 'id' | 'kind' | 'ticket' | 'startedAt' | 'trackingUntil' | 'trackingIntervalSec'> | null;
 }
 
 export interface LocationView {
@@ -194,6 +197,7 @@ export class Backend {
   private attach(state: BackendState) {
     // Forward-compatible migration of older persisted state.
     state.settings ??= defaultSettings();
+    state.incidents ??= [];
     state.settings.apps ??= [];
     this.state = state;
     this.audit = new AuditLog(state.audit, this.opts.onAudit);
@@ -470,6 +474,10 @@ export class Backend {
       certNotAfter: cert.notAfter,
       assignedUser: this.state.employees.find((e) => e.id === d.assignedUserId) ?? null,
       queuedCommands: this.state.relayQueues[d.id]?.length ?? 0,
+      activeIncident: (() => {
+        const i = this.state.incidents!.find((x) => x.deviceId === d.id && x.status === 'active');
+        return i ? { id: i.id, kind: i.kind, ticket: i.ticket, startedAt: i.startedAt, trackingUntil: i.trackingUntil, trackingIntervalSec: i.trackingIntervalSec } : null;
+      })(),
     };
   }
 
@@ -887,11 +895,13 @@ export class Backend {
       case 'LOST_MODE_OFF':
         d.lostMode = false;
         if (d.state === 'lost') d.state = d.policyAckAt ? 'active' : 'enrolled';
+        this.closeIncidents(d.id, 'found', cmd.issuedBy, 'Lost Mode ended');
         break;
       case 'WIPE':
         d.state = 'wiped';
         d.lostMode = false;
         this.state.relayQueues[d.id] = [];
+        this.closeIncidents(d.id, 'not_recovered', cmd.issuedBy, 'Device wiped');
         break;
       case 'RELEASE':
         // The agent has removed management and is uninstalling itself: revoke the certificate.
@@ -1162,7 +1172,23 @@ export class Backend {
     this.relayFor(d.id).enqueue(cmd);
   }
 
+  /** Closes any open incident for a device whose Lost Mode ended or that left management. */
+  private closeIncidents(deviceId: string, resolution: NonNullable<Incident['resolution']>, by: string, note: string) {
+    const now = this.clock();
+    for (const i of this.state.incidents ?? []) {
+      if (i.deviceId !== deviceId || i.status !== 'active') continue;
+      i.status = 'resolved';
+      i.resolution = resolution;
+      i.resolvedBy = by;
+      i.resolvedAt = now;
+      i.trackingUntil = Math.min(i.trackingUntil, now);
+      i.note = note;
+      this.audit.append({ at: now, actor: by, actorRole: 'SYSTEM', action: 'incident.resolved', target: deviceId, ticket: i.ticket, detail: { incidentId: i.id, resolution, note, automatic: true } });
+    }
+  }
+
   private eraseDevice(d: Device, actor: { id: string; role: string }, reason: string, how: string): { deleted: string; commands: number; locations: number } {
+    this.closeIncidents(d.id, 'not_recovered', actor.id, `Device deleted (${how})`);
     const commands = this.state.commands.filter((c) => c.deviceId === d.id).length;
     const locations = this.state.locations.filter((l) => l.deviceId === d.id).length;
     this.state.devices = this.state.devices.filter((x) => x.id !== d.id);
@@ -1187,6 +1213,192 @@ export class Backend {
     });
     this.persist();
     return { deleted: d.id, commands, locations };
+  }
+
+  // ------------------------------------------------------------------ lost / stolen incidents (active tracking)
+
+  /**
+   * Report a device lost or stolen: turns on Lost Mode with time-boxed active
+   * tracking (a fix every 1–5 min for up to 72 h). Location Operator only,
+   * ticket + reason required, the phone shows a persistent notice for as long
+   * as tracking runs, and the phone itself stops at `trackingUntil`.
+   */
+  async reportIncident(
+    sessionId: string,
+    deviceId: string,
+    input: { kind: 'lost' | 'stolen'; ticket: string; reason: string; intervalSec: number; durationHours: number; message?: string; phone?: string },
+  ): Promise<Incident> {
+    const { user } = this.requireSession(sessionId);
+    this.guard(user, 'command.LOST_MODE_ON');
+    const d = this.findDevice(deviceId);
+    if (this.state.incidents!.some((i) => i.deviceId === d.id && i.status === 'active')) throw new ApiError(409, 'incident_open', 'This device already has an open lost/stolen incident');
+    const kind = input.kind === 'stolen' ? 'stolen' : input.kind === 'lost' ? 'lost' : null;
+    if (!kind) throw new ApiError(422, 'invalid_kind', 'Choose lost or stolen');
+    const interval = Number(input.intervalSec);
+    if (![60, 120, 300].includes(interval)) throw new ApiError(422, 'invalid_interval', 'Tracking interval must be 1, 2 or 5 minutes');
+    const hours = Number(input.durationHours);
+    if (!(hours >= 1 && hours <= 72)) throw new ApiError(422, 'invalid_duration', 'Active tracking can run for 1–72 hours (extend if needed)');
+    const now = this.clock();
+    const trackingUntil = now + Math.round(hours * 3600_000);
+    // issueCommand enforces ticket, reason, notice acknowledgement and RBAC, and audits the command.
+    await this.issueCommand(sessionId, d.id, {
+      type: 'LOST_MODE_ON',
+      ticket: input.ticket,
+      reason: input.reason,
+      params: { message: input.message, phone: input.phone, kind, trackingIntervalSec: interval, trackingUntil },
+    });
+    const inc: Incident = {
+      id: randomId('inc', 8),
+      deviceId: d.id,
+      kind,
+      ticket: String(input.ticket).trim(),
+      reason: String(input.reason).trim().slice(0, 500),
+      reportedBy: user.id,
+      startedAt: now,
+      trackingIntervalSec: interval,
+      trackingUntil,
+      status: 'active',
+      viewAudit: {},
+    };
+    this.state.incidents!.push(inc);
+    this.audit.append({ at: now, actor: user.id, actorRole: user.role, action: 'incident.reported', target: d.id, ticket: inc.ticket, detail: { incidentId: inc.id, kind, intervalSec: interval, trackingUntil } });
+    this.persist();
+    return structuredClone(inc);
+  }
+
+  /** Extend tracking and/or change the interval (re-sends a signed LOST_MODE_ON with the new limits). */
+  async updateIncidentTracking(sessionId: string, incidentId: string, input: { extendHours?: number; intervalSec?: number; reason: string }): Promise<Incident> {
+    const { user } = this.requireSession(sessionId);
+    this.guard(user, 'command.LOST_MODE_ON');
+    const inc = this.findIncident(incidentId);
+    if (inc.status !== 'active') throw new ApiError(409, 'incident_closed', 'This incident is closed');
+    if (!input.reason || input.reason.trim().length < 5) throw new ApiError(422, 'reason_required', 'Say why tracking is being changed');
+    const now = this.clock();
+    let until = inc.trackingUntil;
+    if (input.extendHours !== undefined) {
+      const h = Number(input.extendHours);
+      if (!(h >= 1 && h <= 72)) throw new ApiError(422, 'invalid_duration', 'Extend by 1–72 hours');
+      until = Math.min(Math.max(until, now) + h * 3600_000, now + 72 * 3600_000);
+    }
+    let interval = inc.trackingIntervalSec;
+    if (input.intervalSec !== undefined) {
+      if (![60, 120, 300].includes(Number(input.intervalSec))) throw new ApiError(422, 'invalid_interval', 'Tracking interval must be 1, 2 or 5 minutes');
+      interval = Number(input.intervalSec);
+    }
+    const last = this.state.commands.filter((c) => c.deviceId === inc.deviceId && c.type === 'LOST_MODE_ON').sort((a, b) => b.issuedAt - a.issuedAt)[0];
+    await this.issueCommand(sessionId, inc.deviceId, {
+      type: 'LOST_MODE_ON',
+      ticket: inc.ticket,
+      reason: input.reason,
+      params: { message: last?.params.message, phone: last?.params.phone, kind: inc.kind, trackingIntervalSec: interval, trackingUntil: until },
+    });
+    const before = { trackingUntil: inc.trackingUntil, intervalSec: inc.trackingIntervalSec };
+    inc.trackingUntil = until;
+    inc.trackingIntervalSec = interval;
+    this.audit.append({ at: now, actor: user.id, actorRole: user.role, action: 'incident.tracking_updated', target: inc.deviceId, ticket: inc.ticket, detail: { incidentId: inc.id, before, after: { trackingUntil: until, intervalSec: interval }, reason: input.reason.trim().slice(0, 300) } });
+    this.persist();
+    return structuredClone(inc);
+  }
+
+  /**
+   * Close an incident. Found/recovered/false alarm end Lost Mode (and tracking)
+   * on the phone; "not recovered" stops active tracking but keeps Lost Mode so
+   * the phone stays locked — wipe it next.
+   */
+  async resolveIncident(sessionId: string, incidentId: string, input: { resolution: Incident['resolution']; note?: string }): Promise<Incident> {
+    const { user } = this.requireSession(sessionId);
+    this.guard(user, 'command.LOST_MODE_OFF');
+    const inc = this.findIncident(incidentId);
+    if (inc.status !== 'active') throw new ApiError(409, 'incident_closed', 'This incident is already closed');
+    const resolution = input.resolution;
+    if (!resolution || !['found', 'recovered', 'not_recovered', 'false_alarm'].includes(resolution)) throw new ApiError(422, 'invalid_resolution', 'Choose how the incident ended');
+    const now = this.clock();
+    const d = this.state.devices.find((x) => x.id === inc.deviceId);
+    if (d && d.state !== 'wiped' && d.state !== 'retired') {
+      if (resolution === 'not_recovered') {
+        // Stop high-frequency tracking now; Lost Mode (5-minute fixes, locked screen) stays until the phone is wiped.
+        const last = this.state.commands.filter((c) => c.deviceId === inc.deviceId && c.type === 'LOST_MODE_ON').sort((a, b) => b.issuedAt - a.issuedAt)[0];
+        await this.issueCommand(sessionId, inc.deviceId, {
+          type: 'LOST_MODE_ON',
+          ticket: inc.ticket,
+          reason: 'Incident closed as not recovered: active tracking stopped',
+          params: { message: last?.params.message, phone: last?.params.phone, kind: inc.kind, trackingIntervalSec: 300, trackingUntil: now },
+        });
+      } else {
+        await this.issueCommand(sessionId, inc.deviceId, { type: 'LOST_MODE_OFF' });
+      }
+    }
+    inc.status = 'resolved';
+    inc.resolution = resolution;
+    inc.resolvedBy = user.id;
+    inc.resolvedAt = now;
+    inc.trackingUntil = Math.min(inc.trackingUntil, now);
+    inc.note = input.note?.trim().slice(0, 500) || undefined;
+    this.audit.append({ at: now, actor: user.id, actorRole: user.role, action: 'incident.resolved', target: inc.deviceId, ticket: inc.ticket, detail: { incidentId: inc.id, resolution, note: inc.note } });
+    this.persist();
+    return structuredClone(inc);
+  }
+
+  /** Incidents without coordinates — visible to every console role (status only). */
+  listIncidents(sessionId: string): (Omit<Incident, 'viewAudit'> & { deviceName: string; lastFixAt: number | null; batteryLevel: number | null; lastCheckinAt: number | null })[] {
+    const { user } = this.requireSession(sessionId);
+    this.guard(user, 'device.read');
+    return this.state
+      .incidents!.map((i) => {
+        const d = this.state.devices.find((x) => x.id === i.deviceId);
+        const fixes = this.state.locations.filter((l) => l.deviceId === i.deviceId && l.ticket === i.ticket);
+        const { viewAudit: _v, ...rest } = i;
+        return {
+          ...structuredClone(rest),
+          deviceName: d ? displayName(d) : `${i.deviceId} (deleted)`,
+          lastFixAt: fixes.length ? Math.max(...fixes.map((f) => f.receivedAt)) : null,
+          batteryLevel: d?.telemetry?.batteryLevel ?? null,
+          lastCheckinAt: d?.lastCheckinAt ?? null,
+        };
+      })
+      .sort((a, b) => (a.status === b.status ? b.startedAt - a.startedAt : a.status === 'active' ? -1 : 1));
+  }
+
+  /**
+   * Live tracking data for one incident (Location Operator). Every fix filed
+   * under the incident's ticket since it started, newest first. Audited once
+   * per operator per 15 minutes so a live, auto-refreshing view does not flood
+   * the audit log while every viewing session is still on record.
+   */
+  async trackIncident(sessionId: string, incidentId: string): Promise<{
+    incident: Omit<Incident, 'viewAudit'>;
+    device: { id: string; name: string; state: string; lostMode: boolean; batteryLevel: number | null; lastCheckinAt: number | null } | null;
+    fixes: LocationView[];
+    trackingActive: boolean;
+  }> {
+    const { user } = this.requireSession(sessionId);
+    this.guard(user, 'location.read');
+    const inc = this.findIncident(incidentId);
+    const now = this.clock();
+    const d = this.state.devices.find((x) => x.id === inc.deviceId) ?? null;
+    const fixes: LocationView[] = [];
+    for (const l of this.state.locations.filter((x) => x.deviceId === inc.deviceId && x.ticket === inc.ticket && x.receivedAt >= inc.startedAt - 60_000)) {
+      fixes.push({ id: l.id, deviceId: l.deviceId, deviceName: d ? displayName(d) : l.deviceId, commandId: l.commandId, ticket: l.ticket, tier: l.tier, receivedAt: l.receivedAt, fix: await openJson<LocationFix>(l.sealed, this.state.keys.locationKey) });
+    }
+    inc.viewAudit ??= {};
+    if (!inc.viewAudit[user.id] || now - inc.viewAudit[user.id] > 15 * 60_000) {
+      inc.viewAudit[user.id] = now;
+      this.audit.append({ at: now, actor: user.id, actorRole: user.role, action: 'location.tracking_viewed', target: inc.deviceId, ticket: inc.ticket, detail: { incidentId: inc.id, fixes: fixes.length } });
+      this.persist();
+    }
+    const { viewAudit: _v, ...incident } = inc;
+    return {
+      incident: structuredClone(incident),
+      device: d ? { id: d.id, name: displayName(d), state: d.state, lostMode: d.lostMode, batteryLevel: d.telemetry?.batteryLevel ?? null, lastCheckinAt: d.lastCheckinAt } : null,
+      fixes: fixes.sort((a, b) => b.fix.fixAt - a.fix.fixAt),
+      trackingActive: inc.status === 'active' && now < inc.trackingUntil,
+    };
+  }
+
+  private findIncident(id: string): Incident {
+    const i = this.state.incidents!.find((x) => x.id === id);
+    if (!i) throw new ApiError(404, 'not_found', 'Incident not found');
+    return i;
   }
 
   /** 30-day retention job (Cloudflare Queue/cron in production). */
@@ -1259,6 +1471,7 @@ export class Backend {
     notice: Notice;
     acknowledgedAt: number | null;
     lostMode: boolean;
+    tracking: { kind: 'lost' | 'stolen'; intervalSec: number; until: number } | null;
     continuousLocation: boolean;
     events: { at: number; type: string; ticket?: string; status: string }[];
     locations: { at: number; tier: number; lat: number; lng: number; accuracyM: number }[];
@@ -1282,6 +1495,10 @@ export class Backend {
       notice: this.notice(),
       acknowledgedAt: d.policyAckAt,
       lostMode: d.lostMode,
+      tracking: (() => {
+        const i = this.state.incidents!.find((x) => x.deviceId === d.id && x.status === 'active' && x.trackingUntil > this.clock());
+        return i ? { kind: i.kind, intervalSec: i.trackingIntervalSec, until: i.trackingUntil } : null;
+      })(),
       continuousLocation: d.policy.continuousLocation,
       events,
       locations: locations.sort((a, b) => b.at - a.at),
@@ -1483,6 +1700,7 @@ export class Backend {
     d.lostMode = false;
     d.assignedUserId = null;
     d.pendingRemoval = null;
+    this.closeIncidents(d.id, 'not_recovered', user.id, 'Device retired');
     this.state.relayQueues[d.id] = [];
     for (const c of this.state.commands) if (c.deviceId === d.id && ['queued', 'delivered', 'pending_approval'].includes(c.status)) c.status = 'expired';
     this.audit.append({ at: this.clock(), actor: user.id, actorRole: user.role, action: 'device.retired', target: d.id, detail: { reason: reason.trim().slice(0, 300), certSerial: d.cert.serial } });
@@ -1679,11 +1897,19 @@ function sanitiseTelemetry(t: Telemetry): Telemetry {
 
 function sanitiseParams(type: CommandType, p: Record<string, unknown>, apps: AppCatalogEntry[]): Record<string, unknown> {
   switch (type) {
-    case 'LOST_MODE_ON':
-      return {
+    case 'LOST_MODE_ON': {
+      const out: Record<string, unknown> = {
         message: String(p.message ?? 'This device is company property. Please call the number below.').slice(0, 200),
         phone: String(p.phone ?? '').replace(/[^0-9+ ()-]/g, '').slice(0, 24),
       };
+      // Active tracking (set only by the lost/stolen incident flow).
+      if (p.trackingIntervalSec !== undefined) {
+        out.trackingIntervalSec = Math.min(300, Math.max(60, Math.round(Number(p.trackingIntervalSec) || 300)));
+        out.trackingUntil = Math.round(Number(p.trackingUntil) || 0);
+        out.kind = p.kind === 'stolen' ? 'stolen' : 'lost';
+      }
+      return out;
+    }
     case 'INSTALL_APP': {
       const pkg = String(p.packageName ?? '');
       if (!/^[a-z][a-z0-9_]*(\.[a-z0-9_]+)+$/.test(pkg)) throw new ApiError(422, 'invalid_package', 'Invalid package name');

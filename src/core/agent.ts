@@ -12,6 +12,7 @@ import { Backend, withinWorkingHours } from './backend';
 import { CommandVerifier, type VerifyFailure } from './commands';
 import { fingerprint, generateEd25519, randomId, signEd25519 } from './crypto';
 import { COLLECTION_NOTICE } from './enrollment';
+import { lostFixIntervalMs } from './tracking';
 import type { DeviceCertificate, DevicePolicy, LocationFix, ProvisioningPayload, SignedCommand, Telemetry } from './types';
 import { LocalDeviceTransport, type DeviceSigner, type DeviceTransport } from '../api/device';
 
@@ -56,6 +57,8 @@ export interface AgentState {
   autoPull?: boolean;
   /** management released and the agent uninstalled (RELEASE) */
   released?: boolean;
+  /** active tracking of a lost/stolen incident (from LOST_MODE_ON params) */
+  tracking?: { intervalSec: number; until: number; kind: 'lost' | 'stolen' } | null;
 }
 
 export class PinMismatchError extends Error {
@@ -273,14 +276,11 @@ export class SimulatedAgent {
       case 'LOST_MODE_ON': {
         this.state.lostMode = true;
         this.state.lostMessage = String(p.params.message ?? '');
-        const n = this.notify({
-          channel: 'lost_mode',
-          importance: 'high',
-          title: 'Lost Mode is on',
-          text: `Your organisation put this device in Lost Mode (ticket ${p.ticket ?? '—'}). Its location is shared every 5 minutes until Lost Mode ends.`,
-          persistent: true,
-          link: this.transparencyLink(),
-        });
+        this.state.tracking =
+          p.params.trackingIntervalSec !== undefined
+            ? { intervalSec: Number(p.params.trackingIntervalSec), until: Number(p.params.trackingUntil), kind: p.params.kind === 'stolen' ? 'stolen' : 'lost' }
+            : null;
+        const n = this.notify({ channel: 'lost_mode', importance: 'high', title: 'Lost Mode is on', text: this.lostText(p.ticket), persistent: true, link: this.transparencyLink() });
         this.state.lastLostFixAt = this.clock();
         await this.postResult(p.id, { status: 'succeeded', detail: 'Lost Mode screen shown', location: this.makeFix(2, n.at, n.channel, n.text) });
         this.log('Lost Mode enabled');
@@ -288,6 +288,7 @@ export class SimulatedAgent {
       }
       case 'LOST_MODE_OFF': {
         this.state.lostMode = false;
+        this.state.tracking = null;
         this.state.notifications = this.state.notifications.filter((x) => x.channel !== 'lost_mode' || !x.persistent);
         this.notify({ channel: 'management', importance: 'low', title: 'Lost Mode ended', text: 'Location sharing for Lost Mode has stopped.', persistent: false });
         await this.postResult(p.id, { status: 'succeeded', detail: 'Lost Mode disabled' });
@@ -348,13 +349,30 @@ export class SimulatedAgent {
     }
   }
 
-  /** Periodic work: Tier 2 every 5 min in Lost Mode; Tier 3 (if policy) every ≥15 min in working hours. */
+  /** The persistent Lost Mode notice — says how often and until when the phone is tracked. */
+  private lostText(ticket?: string): string {
+    const t = this.state.tracking;
+    const now = this.clock();
+    const why = t ? `reported ${t.kind}` : 'put in Lost Mode';
+    const ref = ticket ? ` (ticket ${ticket})` : '';
+    if (t && now < t.until) {
+      const mins = Math.round(t.intervalSec / 60);
+      return `This phone was ${why}${ref}. Your organisation is tracking it every ${mins} min until ${new Date(t.until).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}.`;
+    }
+    return `This phone was ${why}${ref}. Its location is shared every 5 minutes until Lost Mode ends.`;
+  }
+
+  /** Periodic work: Lost Mode fixes (every 1–5 min while actively tracked, else 5 min); Tier 3 (if policy) every ≥15 min in working hours. */
   async tick(): Promise<void> {
     if (!this.enrolled) return;
     const now = this.clock();
     const fixes: LocationFix[] = [];
-    if (this.state.lostMode && now - (this.state.lastLostFixAt ?? 0) >= 5 * 60_000) {
-      const n = this.notify({ channel: 'lost_mode', importance: 'high', title: 'Lost Mode is on', text: 'Location shared with your organisation (Lost Mode).', persistent: true, link: this.transparencyLink() });
+    if (this.state.lostMode && now - (this.state.lastLostFixAt ?? 0) >= lostFixIntervalMs(this.state.tracking, now, this.state.battery) - 1000) {
+      const n = this.notify({ channel: 'lost_mode', importance: 'high', title: 'Lost Mode is on', text: this.lostText(), persistent: true, link: this.transparencyLink() });
+      // Simulated phone on the move while it is being actively tracked (so the console shows a track).
+      if (this.state.tracking && now < this.state.tracking.until) {
+        this.state.home = { lat: this.state.home.lat + (Math.random() - 0.3) * 0.0025, lng: this.state.home.lng + (Math.random() - 0.3) * 0.0025 };
+      }
       fixes.push(this.makeFix(2, n.at, n.channel, n.text));
       this.state.lastLostFixAt = now;
     }

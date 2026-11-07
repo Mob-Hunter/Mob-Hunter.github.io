@@ -45,6 +45,13 @@ Both modes run the same backend code (`src/core/backend.ts`), so every rule is t
 - Device lifecycle: retirement revokes the device's certificate immediately. **Deleting** a device needs a reason and a typed `DELETE`, and the audit log keeps a snapshot of the record:
   - **Active device:** the phone receives a signed RELEASE command. It lifts every restriction, tells the employee it is no longer managed, gives up device-owner rights and **uninstalls the agent** (nothing is wiped). The record, its command history and its encrypted location data are deleted when the phone confirms. The command is re-signed for phones that are offline longer than the 10-minute command lifetime, and a pending removal can be cancelled.
   - **Retired or wiped device:** deleted at once.
+- **Lost & stolen incidents with active tracking:**
+  - The Location Operator reports a device lost or stolen against a ticket, choosing a fix every 1, 2 or 5 minutes for up to 72 hours (extendable).
+  - The live tracking page shows the device's track, distance moved, current speed, battery and last check-in, refreshing every 15 seconds. Each viewing session is audited once per 15 minutes.
+  - The phone shows a persistent notice saying how often and until when it is tracked, and stops by itself at the limit.
+  - Below 15% battery it drops to every 5 minutes.
+  - Closing the incident as found, recovered or a false alarm ends Lost Mode. "Not recovered" keeps the phone locked and prompts a WIPE.
+  - Every role sees incident status; only the Location Operator sees positions.
 - Devices list: state tabs (active, awaiting acknowledgement, Lost Mode, unnamed, retired/wiped) and bulk actions (sync policy, lock, retire, delete).
 - **Location workspace** (Location Operator only):
   - a ticket index (ticket references and device names, never coordinates);
