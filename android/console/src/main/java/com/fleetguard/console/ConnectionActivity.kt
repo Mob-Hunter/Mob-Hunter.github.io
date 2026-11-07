@@ -20,7 +20,7 @@ class ConnectionActivity : Activity() {
         val input = EditText(this).apply {
             hint = "https://fleet.yourcompany.com"
             inputType = InputType.TYPE_TEXT_VARIATION_URI
-            setText(prefs.getString("serverUrl", ""))
+            setText(prefs.getString("serverUrl", null) ?: MainActivity.defaultServer(context) ?: "")
         }
         val col = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -40,15 +40,18 @@ class ConnectionActivity : Activity() {
                     open()
                 }
             })
-            addView(TextView(context).apply { text = "\nNo server yet?"; setTypeface(typeface, Typeface.BOLD) })
-            addView(TextView(context).apply { text = "The demo runs the complete console and backend on this phone with simulated devices. Nothing leaves the phone." })
-            addView(Button(context).apply {
-                text = "Explore the offline demo"
-                setOnClickListener {
-                    prefs.edit().remove("serverUrl").putBoolean("chosen", true).apply()
-                    open()
-                }
-            })
+            // Production builds have a built-in server: no demo option.
+            if (MainActivity.defaultServer(context) == null) {
+                addView(TextView(context).apply { text = "\nNo server yet?"; setTypeface(typeface, Typeface.BOLD) })
+                addView(TextView(context).apply { text = "The demo runs the complete console and backend on this phone with simulated devices. Nothing leaves the phone." })
+                addView(Button(context).apply {
+                    text = "Explore the offline demo"
+                    setOnClickListener {
+                        prefs.edit().remove("serverUrl").putBoolean("chosen", true).apply()
+                        open()
+                    }
+                })
+            }
         }
         setContentView(col)
     }

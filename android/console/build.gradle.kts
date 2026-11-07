@@ -11,8 +11,12 @@ android {
         applicationId = "com.fleetguard.console"
         minSdk = 26
         targetSdk = 35
-        versionCode = 20000
-        versionName = "2.0.0"
+        versionCode = 20100
+        versionName = "2.1.0"
+        // Production server the app opens by default (-PfgServerUrl=https://… or FG_SERVER_URL). Empty = ask on first launch.
+        val server = (project.findProperty("fgServerUrl") as String?) ?: System.getenv("FG_SERVER_URL") ?: ""
+        require(server.isEmpty() || server.startsWith("https://")) { "fgServerUrl must be https://" }
+        resValue("string", "default_server_url", server)
     }
 
     // Release signing: supply the organisation's keystore via FG_KEYSTORE_PATH / FG_KEYSTORE_PASSWORD /

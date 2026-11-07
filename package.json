@@ -7,9 +7,9 @@
   "scripts": {
     "dev": "vite",
     "dev:server": "npm run build && wrangler dev --var PUBLIC_URL:http://127.0.0.1:8787 --var INSECURE_DEV_COOKIES:true --var BOOTSTRAP_TOKEN:local-dev-bootstrap-token",
-    "build": "tsc -p . && vite build",
+    "build": "tsc -p . && vite build && node scripts/embed-assets.mjs",
     "preview": "vite preview --port 4173 --strictPort",
-    "typecheck": "tsc -p . && tsc -p tsconfig.worker.json",
+    "typecheck": "node scripts/embed-assets.mjs --if-missing && tsc -p . && tsc -p tsconfig.worker.json",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "node e2e/run.mjs",

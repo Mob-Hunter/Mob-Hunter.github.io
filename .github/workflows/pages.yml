@@ -14,6 +14,10 @@ concurrency:
   group: pages
   cancel-in-progress: false
 
+env:
+  SERVER_URL: ${{ vars.FLEETGUARD_SERVER_URL || 'https://fleetguard.inbox-ashen.workers.dev' }}
+  DOWNLOADS_URL: https://mob-hunter.github.io/downloads
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -26,17 +30,36 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
+      # The end-to-end suite runs against the self-contained build first.
       - run: npm run build
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
-      - uses: ./.github/actions/android-build
+      # The published site is the production landing page: it points at the live
+      # server and offers the signed APKs over QR codes. No demo backend is published.
+      - name: Production build
+        run: npm run build
+        env:
+          VITE_SERVER_URL: ${{ env.SERVER_URL }}
+          VITE_DOWNLOADS_URL: ${{ env.DOWNLOADS_URL }}
+      - name: Check for the release signing key
+        id: signing
+        env:
+          KS: ${{ secrets.FG_KEYSTORE_BASE64 }}
+        run: echo "present=$([ -n "$KS" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+      - if: steps.signing.outputs.present == 'true'
+        uses: ./.github/actions/android-build
         with:
+          server-url: ${{ env.SERVER_URL }}
           keystore-base64: ${{ secrets.FG_KEYSTORE_BASE64 }}
           keystore-password: ${{ secrets.FG_KEYSTORE_PASSWORD }}
           key-alias: ${{ secrets.FG_KEY_ALIAS }}
           key-password: ${{ secrets.FG_KEY_PASSWORD }}
+      # Without the key, publish the release-signed APKs committed in releases/android.
+      # Debug-signed APKs are never published.
+      - if: steps.signing.outputs.present != 'true'
+        run: mkdir -p apk-out && cp releases/android/* apk-out/ && (cd apk-out && sha256sum -c SHA256SUMS.txt)
       - name: Publish APKs with the site
-        run: mkdir -p dist/downloads && cp apk-out/* dist/downloads/
+        run: mkdir -p dist/downloads && cp apk-out/*.apk apk-out/SHA256SUMS.txt dist/downloads/
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

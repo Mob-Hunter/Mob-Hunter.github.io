@@ -102,7 +102,8 @@ try {
   await page.getByRole('button', { name: 'Mint token + QR' }).click();
   await page.getByAltText('Device-owner provisioning QR code').waitFor();
   const prov = JSON.parse(await page.locator('pre.code').textContent());
-  assert.equal(prov['android.app.extra.PROVISIONING_DEVICE_ADMIN_PACKAGE_DOWNLOAD_LOCATION'], `http://127.0.0.1:${PORT}/api/apk/1.0.0`);
+  // Provisioning downloads the release-signed agent published on GitHub Pages (APK_DOWNLOAD_URL in wrangler.toml).
+  assert.equal(prov['android.app.extra.PROVISIONING_DEVICE_ADMIN_PACKAGE_DOWNLOAD_LOCATION'], 'https://mob-hunter.github.io/downloads/fleetguard-agent.apk');
   await page.getByRole('button', { name: /Simulate a phone scanning this QR/ }).click();
   await page.locator('.toast-ok', { hasText: 'enrolled' }).waitFor();
   await page.getByRole('link', { name: /Device simulator/ }).click();

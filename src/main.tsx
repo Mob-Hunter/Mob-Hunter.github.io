@@ -3,6 +3,8 @@ import { createRoot } from 'react-dom/client';
 import { App } from './App';
 import { Runtime } from './runtime';
 import { RuntimeProvider, ToastHost } from './ui/kit';
+import { isOffServer } from './config';
+import { Landing } from './pages/Landing';
 import './styles.css';
 
 // Boot once even if React StrictMode runs effects twice in development.
@@ -39,7 +41,5 @@ function Boot() {
 }
 
 createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <Boot />
-  </StrictMode>,
+  <StrictMode>{isOffServer() ? <Landing /> : <Boot />}</StrictMode>,
 );

@@ -14,10 +14,12 @@ export function buildProvisioningPayload(opts: {
   wifi?: { ssid: string; security: 'WPA' | 'WEP' | 'NONE' };
   apkVersion?: string;
   signatureChecksum?: string;
+  /** absolute HTTPS URL of the signed agent APK (default: the /api/apk/{version} route) */
+  apkDownloadUrl?: string;
 }): ProvisioningPayload {
   const payload: ProvisioningPayload = {
     'android.app.extra.PROVISIONING_DEVICE_ADMIN_COMPONENT_NAME': AGENT_COMPONENT,
-    'android.app.extra.PROVISIONING_DEVICE_ADMIN_PACKAGE_DOWNLOAD_LOCATION': `${opts.apiBaseUrl}/apk/${opts.apkVersion ?? AGENT_VERSION}`,
+    'android.app.extra.PROVISIONING_DEVICE_ADMIN_PACKAGE_DOWNLOAD_LOCATION': opts.apkDownloadUrl || `${opts.apiBaseUrl}/apk/${opts.apkVersion ?? AGENT_VERSION}`,
     'android.app.extra.PROVISIONING_DEVICE_ADMIN_SIGNATURE_CHECKSUM': opts.signatureChecksum ?? APK_SIGNATURE_CHECKSUM,
     'android.app.extra.PROVISIONING_LEAVE_ALL_SYSTEM_APPS_ENABLED': true,
     'android.app.extra.PROVISIONING_SKIP_ENCRYPTION': false,

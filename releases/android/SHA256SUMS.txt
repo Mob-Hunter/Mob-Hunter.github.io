@@ -1,0 +1,2 @@
+4a135e663a9a8941da3a911902f55689f09f6675d1d72654a24c93c5fad9ee2f  fleetguard-agent.apk
+87d9b13a4e0bd31ce04102dd80d00bc760ca5e264077fed10f00cc8a645c3951  fleetguard-console.apk

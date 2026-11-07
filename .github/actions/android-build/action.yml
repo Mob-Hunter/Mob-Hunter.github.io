@@ -5,6 +5,7 @@ inputs:
   keystore-password: { required: false, default: '' }
   key-alias: { required: false, default: '' }
   key-password: { required: false, default: '' }
+  server-url: { required: false, default: '' }
 runs:
   using: composite
   steps:
@@ -23,6 +24,7 @@ runs:
         FG_KEYSTORE_PASSWORD: ${{ inputs.keystore-password }}
         FG_KEY_ALIAS: ${{ inputs.key-alias }}
         FG_KEY_PASSWORD: ${{ inputs.key-password }}
+        FG_SERVER_URL: ${{ inputs.server-url }}
       run: |
         if [ -n "$KS_B64" ]; then
           echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/release.jks"

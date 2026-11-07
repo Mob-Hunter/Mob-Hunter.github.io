@@ -1,0 +1,54 @@
+name: Deploy server (Cloudflare Worker)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: worker-deploy
+  cancel-in-progress: false
+
+env:
+  SERVER_URL: ${{ vars.FLEETGUARD_SERVER_URL || 'https://fleetguard.inbox-ashen.workers.dev' }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check for the Cloudflare token
+        id: cf
+        env:
+          TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "::notice::CLOUDFLARE_API_TOKEN secret not set; skipping server deploy (deploy with: npx wrangler deploy)."
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.cf.outputs.present == 'true'
+        uses: actions/checkout@v4
+      - if: steps.cf.outputs.present == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - if: steps.cf.outputs.present == 'true'
+        run: npm ci && npm run typecheck && npm test
+      - if: steps.cf.outputs.present == 'true'
+        run: npm run build
+        env:
+          VITE_SERVER_URL: ${{ env.SERVER_URL }}
+          VITE_DOWNLOADS_URL: https://mob-hunter.github.io/downloads
+      - if: steps.cf.outputs.present == 'true'
+        run: npx wrangler deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          WRANGLER_SEND_METRICS: 'false'
+      - if: steps.cf.outputs.present == 'true'
+        run: curl -fsS "$SERVER_URL/api/health"
