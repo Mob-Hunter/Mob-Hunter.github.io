@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Badge, Card, Empty, ErrorBox, Field, MiniMap, fmtAgo, fmtTime, useAction, useAsyncQuery, useCan, useQuery, useRuntime } from '../ui/kit';
+import { Badge, Card, Empty, ErrorBox, Field, MiniMap, fmtAgo, fmtTime, useAction, useAsyncQuery, useCan, useQuery, useRuntime, TableWrap } from '../ui/kit';
 import { LocationTable, TicketPicker, TIER_LABEL, latestPerDevice, toMapPoints } from '../ui/location';
 import type { LocationFilter } from '../api/console';
 
@@ -175,7 +175,7 @@ function LocationWorkspace() {
       <Card title="Tickets with location activity">
         {ticketErr && <ErrorBox>{ticketErr}</ErrorBox>}
         {tickets?.length ? (
-          <div className="table-wrap">
+          <TableWrap label="Location results">
             <table>
               <thead>
                 <tr>
@@ -206,7 +206,7 @@ function LocationWorkspace() {
                 ))}
               </tbody>
             </table>
-          </div>
+          </TableWrap>
         ) : (
           <Empty>
             No location requests yet. Open a device and send <strong>LOCATE</strong> with a ticket reference — the employee is notified and the result appears here.

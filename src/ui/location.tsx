@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { Badge, Card, Empty, ErrorBox, Field, MiniMap, fmtAgo, fmtTime, osmLink, useAsyncQuery, useCan, useQuery, type MapPoint } from './kit';
+import { Badge, Card, Empty, ErrorBox, Field, MiniMap, fmtAgo, fmtTime, osmLink, useAsyncQuery, useCan, useQuery, type MapPoint, TableWrap } from './kit';
 import { ROLE_LABEL } from '../core/rbac';
 import type { LocationView } from '../core/backend';
 import type { Command, LocationFilter } from '../api/console';
@@ -51,7 +51,7 @@ export function toMapPoints(rows: LocationView[], latestIds: Set<string>): MapPo
 export function LocationTable({ rows, showDevice = true }: { rows: LocationView[]; showDevice?: boolean }) {
   if (!rows.length) return <Empty>No location fixes match these filters.</Empty>;
   return (
-    <div className="table-wrap">
+    <TableWrap label="Location history">
       <table>
         <thead>
           <tr>
@@ -93,7 +93,7 @@ export function LocationTable({ rows, showDevice = true }: { rows: LocationView[
           ))}
         </tbody>
       </table>
-    </div>
+    </TableWrap>
   );
 }
 

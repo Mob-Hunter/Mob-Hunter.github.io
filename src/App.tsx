@@ -1,5 +1,5 @@
 import { HashRouter, Navigate, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
-import type { ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { useMe, useRuntime } from './ui/kit';
 import { ROLE_LABEL, can, type Permission } from './core/rbac';
 import { LoginPage } from './pages/Login';
@@ -44,19 +44,48 @@ function Shell({ children }: { children: ReactNode }) {
   const me = useMe();
   const nav = useNavigate();
   const from = useLocation().pathname;
+  const [menuOpen, setMenuOpen] = useState(false);
+  // Phone menu: close on navigation and on Escape; stop the page scrolling behind it.
+  useEffect(() => setMenuOpen(false), [from]);
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setMenuOpen(false);
+    document.addEventListener('keydown', onKey);
+    document.body.classList.add('menu-open');
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.body.classList.remove('menu-open');
+    };
+  }, [menuOpen]);
   if (rt.mode === 'server' && rt.health.needsBootstrap) return <Navigate to="/setup" replace />;
   if (!me) return <Navigate to="/login" replace state={{ from }} />;
   const signOut = async () => {
     await rt.signOut();
     nav('/login');
   };
-  const visible = NAV.filter((n) => (!n.perm || can(me.role, n.perm)) && (!n.anyOf || n.anyOf.some((p) => can(me.role, p))));
+  const visible = NAV.filter(
+    (n) =>
+      (!n.perm || can(me.role, n.perm)) &&
+      (!n.anyOf || n.anyOf.some((p) => can(me.role, p))) &&
+      // On a live server the simulator enrols test phones, so only people who can enrol devices see it.
+      !(n.to === '/simulator' && rt.mode === 'server' && !can(me.role, 'enrollment.create')),
+  );
   return (
     <div className="shell">
       <a className="skip-link" href="#main">
         Skip to content
       </a>
       <header className="topbar">
+        <button
+          type="button"
+          className="btn btn-ghost btn-sm menu-btn"
+          aria-expanded={menuOpen}
+          aria-controls="mainnav"
+          aria-label={menuOpen ? 'Close menu' : 'Open menu'}
+          onClick={() => setMenuOpen((o) => !o)}
+        >
+          <span aria-hidden>{menuOpen ? '✕' : '☰'}</span>
+        </button>
         <div className="brand">
           <span className="brand-mark" aria-hidden>
             ◈
@@ -80,7 +109,11 @@ function Shell({ children }: { children: ReactNode }) {
           </button>
         </div>
       </header>
-      <nav className="sidenav" aria-label="Main">
+      <nav id="mainnav" className={`sidenav${menuOpen ? ' open' : ''}`} aria-label="Main">
+        <div className="nav-user">
+          <strong>{me.name}</strong>
+          <span className="muted small">{ROLE_LABEL[me.role]}</span>
+        </div>
         {visible.map((n) => (
           <NavLink key={n.to} to={n.to} end={n.to === '/'} className={({ isActive }) => `navlink${isActive ? ' active' : ''}`}>
             <span className="navicon" aria-hidden>

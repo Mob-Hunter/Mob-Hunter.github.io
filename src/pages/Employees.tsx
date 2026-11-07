@@ -35,7 +35,7 @@ export function EmployeesPage() {
       {canManage && <AddEmployee />}
       {canManage && <ImportEmployees />}
       <div className="toolbar">
-        <input type="search" placeholder="Search name, e-mail, department…" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search employees" />
+        <input type="search" placeholder="Search employees…" title="Search by name, e-mail or department" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search employees" />
         <label className="check small">
           <input type="checkbox" checked={showLeavers} onChange={(e) => setShowLeavers(e.target.checked)} /> Show leavers
         </label>

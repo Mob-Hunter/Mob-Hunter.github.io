@@ -16,12 +16,12 @@ export function Landing() {
   return (
     <div className="public-page">
       <div className="page narrow">
-        <div className="brand brand-lg">
+        <h1 className="brand brand-lg">
           <span className="brand-mark" aria-hidden>
             ◈
           </span>
           FleetGuard
-        </div>
+        </h1>
         <h1>Company device management</h1>
         <div className="card landing-card">
           <div className="download-card">

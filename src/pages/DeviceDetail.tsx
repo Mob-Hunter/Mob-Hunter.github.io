@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { Badge, Card, Empty, ErrorBox, Field, fmtAgo, fmtTime, useAction, useCan, useMe, useQuery, useRuntime } from '../ui/kit';
+import { Badge, Card, Empty, ErrorBox, Field, fmtAgo, fmtTime, useAction, useCan, useMe, useQuery, useRuntime, TableWrap } from '../ui/kit';
 import { DeviceLocationPanel } from '../ui/location';
 import { COMMAND_TYPES, DUAL_CONTROL, TICKET_REQUIRED, can, type CommandType } from '../core/rbac';
 import { StatusBadge } from './Overview';
@@ -117,7 +117,7 @@ export function DeviceDetailPage() {
         )}
         <h3>History</h3>
         {commands?.length ? (
-          <div className="table-wrap">
+          <TableWrap label="Command history">
             <table>
               <thead>
                 <tr>
@@ -146,7 +146,7 @@ export function DeviceDetailPage() {
                 ))}
               </tbody>
             </table>
-          </div>
+          </TableWrap>
         ) : (
           <Empty>No commands sent to this device.</Empty>
         )}

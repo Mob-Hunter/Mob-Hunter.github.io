@@ -36,6 +36,12 @@ function useChecksums(base: string) {
 export function ApkDownloads({ compact = false }: { compact?: boolean }) {
   const base = downloadsBase();
   const sums = useChecksums(base);
+  if (sums && !Object.keys(sums).length)
+    return (
+      <div className="callout" role="status">
+        The Android apps are not published at <code className="break">{base}</code> yet. They appear here after the next release build.
+      </div>
+    );
   return (
     <div className={compact ? 'stack' : 'grid2'}>
       {APK_FILES.map((a) => {

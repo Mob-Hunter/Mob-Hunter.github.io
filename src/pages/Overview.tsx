@@ -30,10 +30,10 @@ export function OverviewPage() {
             <span className="stat-n">{stats.online}</span>
             <span className="stat-l">Seen &lt;15 min</span>
           </div>
-          <div className="stat">
+          <Link to="/devices?tab=pending" className="stat">
             <span className="stat-n">{stats.awaitingAck}</span>
             <span className="stat-l">Awaiting notice ack</span>
-          </div>
+          </Link>
           <Link to="/incidents" className="stat">
             <span className="stat-n">{stats.lost}</span>
             <span className="stat-l">Lost / stolen</span>

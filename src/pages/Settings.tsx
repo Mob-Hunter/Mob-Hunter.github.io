@@ -108,6 +108,7 @@ function AppsCard({ apps, editable }: { apps: AppCatalogEntry[]; editable: boole
             }, 'App saved to catalogue');
           }}
         >
+          <h3 className="h3">Add or update an app</h3>
           <div className="row-form">
             <Field label="Name">
               <input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} required maxLength={80} />

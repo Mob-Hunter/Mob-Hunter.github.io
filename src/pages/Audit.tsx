@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Badge, Card, ErrorBox, download, fmtTime, useAction, useCan, useQuery, useRuntime } from '../ui/kit';
+import { Badge, Card, ErrorBox, download, fmtTime, useAction, useCan, useQuery, useRuntime, TableWrap } from '../ui/kit';
 import type { ChainVerification } from '../core/audit';
 
 export function AuditPage() {
@@ -61,7 +61,7 @@ export function AuditPage() {
         <span className="muted small">{rows?.length ?? 0} rows · append-only · hash = SHA-256(prev_hash + payload)</span>
       </div>
       <Card>
-        <div className="table-wrap">
+        <TableWrap label="Audit log entries">
           <table className="audit">
             <thead>
               <tr>
@@ -99,7 +99,7 @@ export function AuditPage() {
               ))}
             </tbody>
           </table>
-        </div>
+        </TableWrap>
       </Card>
     </div>
   );

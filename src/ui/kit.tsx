@@ -1,4 +1,4 @@
-import { cloneElement, createContext, isValidElement, useCallback, useContext, useEffect, useState, useSyncExternalStore, type ReactElement, type ReactNode } from 'react';
+import { cloneElement, createContext, isValidElement, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactElement, type ReactNode } from 'react';
 import QRCode from 'qrcode';
 import type { Runtime } from '../runtime';
 import { ApiError } from '../core/backend';
@@ -390,4 +390,23 @@ export function download(filename: string, text: string, type = 'application/jso
   a.download = filename;
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/**
+ * Scrollable, keyboard-focusable table container. On phones (stack=true) each row
+ * becomes a card: cells are labelled with their column heading via data-label.
+ */
+export function TableWrap({ label, stack = true, children }: { label: string; stack?: boolean; children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const table = ref.current?.querySelector('table');
+    if (!table || !stack) return;
+    const heads = [...table.querySelectorAll('thead th')].map((th) => th.textContent?.trim() ?? '');
+    table.querySelectorAll('tbody tr').forEach((tr) => [...tr.children].forEach((td, i) => td.setAttribute('data-label', heads[i] ?? '')));
+  });
+  return (
+    <div ref={ref} className={`table-wrap${stack ? ' table-stack' : ''}`} tabIndex={0} role="region" aria-label={label}>
+      {children}
+    </div>
+  );
 }
