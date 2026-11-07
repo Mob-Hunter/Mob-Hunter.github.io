@@ -28,6 +28,8 @@
 | CSRF / clickjacking | SameSite=Strict cookie plus a required custom header; `frame-ancestors 'none'` and `X-Frame-Options: DENY` | `tests/worker-http.test.ts`, server E2E |
 | Rogue app pushed to devices | INSTALL_APP limited to the approved catalogue; the agent checks the SHA-256 before installing | `worker-http.test.ts › app catalogue` |
 | Malicious agent update | The provisioning QR pins the signing-certificate checksum; the release key is held offline | android/README.md |
+| Orphaned managed phone / evidence destruction | Only retired or wiped devices can be deleted; deletion needs a reason and typed confirmation, is limited to Super Admin and Device Admin, and leaves a snapshot in the append-only audit log | `tests/delete-location.test.ts`, E2E |
+| Over-broad location access | The ticket index carries no coordinates; results default to fixes under the stated ticket; tier, period and device filters; every view is audited with its filter | `tests/delete-location.test.ts` |
 | CSV formula injection | Exported cells starting with `= + - @` are neutralised | `tests/csv.test.ts` |
 | Session theft | HttpOnly cookie; sessions revoked on role change, disable, MFA reset or password change; 30-minute idle expiry | `worker-http.test.ts`, `enterprise.test.ts` |
 

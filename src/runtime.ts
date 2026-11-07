@@ -202,6 +202,17 @@ export class Runtime {
     const e2 = await backend.createEnrollment(sid, { note: 'Seed device 2' });
     await this.addAgent(e2.provisioning, { autoPull: true });
     await backend.logout(sid);
+
+    // Location history for the demo: the Location Operator locates device 1 twice against a ticket,
+    // through the normal signed-command flow (the simulated phone shows its notification each time).
+    onProgress?.('Recording demo location requests…');
+    const op = await this.signInDemo('LOCATION_OPERATOR');
+    for (const reason of ['Employee reported the phone missing after a site visit', 'Follow-up check before dispatching a courier']) {
+      await backend.issueCommand(op, a1.state.deviceId!, { type: 'LOCATE', ticket: 'INC-1001', reason });
+      await a1.poll();
+      a1.state.home = { lat: a1.state.home.lat + 0.004, lng: a1.state.home.lng + 0.003 };
+    }
+    await backend.logout(op);
     this.saveAgents();
   }
 
@@ -280,6 +291,12 @@ export class Runtime {
   removeAgent(simId: string) {
     this.agents.delete(simId);
     this.saveAgents();
+  }
+
+  /** A deleted device's simulator has nothing left to talk to: remove it too. */
+  forgetDevice(deviceId: string) {
+    const a = this.agentForDevice(deviceId);
+    if (a) this.removeAgent(a.state.simId);
   }
 
   agentForDevice(deviceId: string): SimulatedAgent | undefined {

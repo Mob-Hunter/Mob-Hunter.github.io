@@ -42,7 +42,17 @@ Both modes run the same backend code (`src/core/backend.ts`), so every rule is t
 - Employees: add, import from HR CSV, leaver offboarding, and DSAR export (Security only, ticketed and audited).
 - Users and access: invite users with an authenticator QR, disable accounts, reset MFA, and list or revoke sessions.
 - Settings: organisation name and DPO contact (both shown in the employee notice), SIEM webhook, approved app catalogue, and change password.
-- Device retirement revokes the device's certificate immediately.
+- Device lifecycle: retirement revokes the device's certificate immediately. **Deletion** permanently removes a retired or wiped device with its command history and encrypted location data. It needs a reason and a typed `DELETE`, and the audit log keeps a snapshot. Active devices can't be deleted, so no managed phone is left orphaned.
+- Devices list: state tabs (active, awaiting acknowledgement, Lost Mode, unnamed, retired/wiped) and bulk actions (sync policy, lock, retire, delete).
+- **Location workspace** (Location Operator only):
+  - a ticket index (ticket references and device names, never coordinates);
+  - a fleet map of each device's latest position, with tracks, accuracy circles, scale and legend;
+  - a "latest position per device" list and full history;
+  - filters by device, tier and period;
+  - "only fixes recorded under this ticket" switched on by default (purpose limitation);
+  - Lost Mode fixes filed under the Lost Mode ticket.
+
+  Every other role sees a "Restricted" panel naming who can help, plus the device's last location request. The demo seeds ticket `INC-1001`.
 
 ## Develop
 

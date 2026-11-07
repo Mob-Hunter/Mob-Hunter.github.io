@@ -127,7 +127,7 @@ try {
   await page.locator('td', { hasText: 'succeeded' }).first().waitFor({ timeout: 30000 });
   ok('LOCATE signed by the server, pulled by the device, result returned');
   await page.getByLabel('Ticket justifying this view').fill('INC-777');
-  await page.getByRole('button', { name: 'Show locations' }).click();
+  await page.getByRole('button', { name: 'Show location', exact: true }).click();
   await page.getByRole('img', { name: /Map with 1 location fixes/ }).waitFor();
   ok('location decrypted server-side for the Location Operator only');
   await page.getByRole('button', { name: 'Sign out' }).click();

@@ -144,6 +144,9 @@ export function LoginPage() {
           <p className="tiny muted">
             Password for all demo accounts: <code>{DEMO_PASSWORD}</code>
           </p>
+          <p className="tiny muted">
+            Location data is visible only to the <strong>Location Operator</strong>: open <em>Locations</em> and pick ticket <code>INC-1001</code>.
+          </p>
         </div>
       )}
       <div className="login-apps">

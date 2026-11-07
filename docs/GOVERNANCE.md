@@ -39,6 +39,14 @@ Reference law: Sri Lanka **Personal Data Protection Act No. 9 of 2022** (PDPA). 
 **Overcome it.** Purge location automatically after 30 days and keep audit records for 1 year. Set up a DSAR (access request) process with the DPO.
 **Built in:** location is stored encrypted with AES-256-GCM and purged after 30 days. The employee transparency page shows every request and every stored fix for their device.
 
+### Device deletion and the right to erasure
+Deleting a device record erases its command history and encrypted location data, which supports storage limitation and erasure requests. The append-only audit log is kept, with a snapshot of the deleted record, the reason and the actor, because accountability requires it. State this in the privacy notice.
+**Built in:** only Super Admin or Device Admin can delete. The device must already be retired or wiped, and deletion needs a reason plus a typed `DELETE`.
+
+### Purpose limitation for location views
+Viewing location under ticket X should show the fixes collected for ticket X, not everything.
+**Built in:** "Only fixes recorded under this ticket" is on by default. Lost Mode fixes are filed under the ticket that turned Lost Mode on. Widening a view is a deliberate choice, and the audit row records which filter was used.
+
 ### 7. Agent APK signing key = control of every phone (High)
 **Risk.** Whoever holds the agent's signing key can ship an "update" that every enrolled device-owner phone will accept.
 **Overcome it.** Generate the release keystore offline. Store it in a hardware security module or an offline vault with two named custodians, and give CI access only through encrypted secrets (`FG_KEYSTORE_*`). Never use the debug-signed evaluation APKs on staff phones. Record the key's fingerprint in the DPIA.

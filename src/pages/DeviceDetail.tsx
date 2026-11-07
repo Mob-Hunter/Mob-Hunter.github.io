@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
-import { Link, useParams } from 'react-router-dom';
-import { Badge, Card, Empty, ErrorBox, Field, MiniMap, fmtAgo, fmtTime, useAction, useAsyncQuery, useCan, useMe, useQuery, useRuntime } from '../ui/kit';
+import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Badge, Card, Empty, ErrorBox, Field, fmtAgo, fmtTime, useAction, useCan, useMe, useQuery, useRuntime } from '../ui/kit';
+import { DeviceLocationPanel } from '../ui/location';
 import { COMMAND_TYPES, DUAL_CONTROL, TICKET_REQUIRED, can, type CommandType } from '../core/rbac';
 import { StatusBadge } from './Overview';
 import { stateBadge } from './Devices';
@@ -24,7 +25,7 @@ export function DeviceDetailPage() {
   const [employees] = useQuery((api) => api.listEmployees());
   const canUpdate = useCan('device.update');
   const canRetire = useCan('device.retire');
-  const canLocate = useCan('location.read');
+  const canDelete = useCan('device.delete');
   if (err && !device) return <ErrorBox>{err}</ErrorBox>;
   if (!device) return null;
   const allowed = COMMAND_TYPES.filter((t) => can(me.role, `command.${t}`));
@@ -136,8 +137,9 @@ export function DeviceDetailPage() {
       </Card>
 
       <PolicyCard deviceId={device.id} policy={device.policy} />
-      {canRetire && device.state !== 'retired' && <RetireCard deviceId={device.id} />}
-      {canLocate && <DeviceLocations deviceId={device.id} />}
+      <DeviceLocationPanel deviceId={device.id} commands={commands} lostMode={device.lostMode} />
+      {canRetire && device.state !== 'retired' && device.state !== 'wiped' && <RetireCard deviceId={device.id} />}
+      {canDelete && (device.state === 'retired' || device.state === 'wiped') && <DeleteCard deviceId={device.id} name={device.displayName} />}
     </div>
   );
 }
@@ -317,41 +319,6 @@ function PolicyCard({ deviceId, policy }: { deviceId: string; policy: import('..
   );
 }
 
-function DeviceLocations({ deviceId }: { deviceId: string }) {
-  const [ticket, setTicket] = useState('');
-  const [submitted, setSubmitted] = useState<string | null>(null);
-  // Deliberately NOT re-run on every change: each view is an audited access.
-  const q = useAsyncQuery((api) => api.listLocationResults({ deviceId, ticket: submitted! }), [deviceId, submitted], !!submitted);
-  return (
-    <Card title="Location results (Location Operator)">
-      <form
-        className="row-form"
-        onSubmit={(e) => {
-          e.preventDefault();
-          setSubmitted(ticket.trim().toUpperCase());
-        }}
-      >
-        <Field label="Ticket justifying this view">
-          <input value={ticket} onChange={(e) => setTicket(e.target.value)} required placeholder="INC-1042" />
-        </Field>
-        <button className="btn">Show locations</button>
-        {q.data && (
-          <button type="button" className="btn btn-ghost" onClick={q.reload}>
-            Refresh
-          </button>
-        )}
-      </form>
-      {q.error && <ErrorBox>{q.error}</ErrorBox>}
-      {q.data && (
-        <>
-          <MiniMap points={q.data.map((l, i) => ({ ...l.fix, label: `${fmtTime(l.fix.fixAt)} · tier ${l.tier}`, highlight: i === 0 }))} />
-          <p className="tiny muted">Your view was recorded in the audit log against {submitted}.</p>
-        </>
-      )}
-    </Card>
-  );
-}
-
 function RetireCard({ deviceId }: { deviceId: string }) {
   const rt = useRuntime();
   const [reason, setReason] = useState('');
@@ -374,6 +341,45 @@ function RetireCard({ deviceId }: { deviceId: string }) {
         </Field>
         <button className="btn btn-danger" disabled={busy}>
           Retire
+        </button>
+      </form>
+    </Card>
+  );
+}
+
+/** Permanent removal of a retired/wiped device record (audited; the audit log keeps a snapshot). */
+function DeleteCard({ deviceId, name }: { deviceId: string; name: string }) {
+  const rt = useRuntime();
+  const nav = useNavigate();
+  const [reason, setReason] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const { run, busy } = useAction();
+  return (
+    <Card title="Delete device record" className="danger-zone">
+      <p className="small">
+        Permanently removes <strong>{name}</strong> from the console, with its command history and encrypted location data. This cannot be undone. The audit log keeps a
+        record of what was deleted, by whom and why.
+      </p>
+      <form
+        className="row-form"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void run(async () => {
+            const r = await rt.api.deleteDevice(deviceId, { reason, confirm });
+            rt.forgetDevice(deviceId);
+            nav('/devices', { replace: true });
+            return r;
+          }, 'Device deleted (recorded in the audit log)');
+        }}
+      >
+        <Field label="Reason for deletion">
+          <input value={reason} onChange={(e) => setReason(e.target.value)} required minLength={5} placeholder="e.g. Disposed via certified e-waste, ref EW-221" />
+        </Field>
+        <Field label='Type "DELETE" to confirm'>
+          <input value={confirm} onChange={(e) => setConfirm(e.target.value)} required autoComplete="off" />
+        </Field>
+        <button className="btn btn-danger" disabled={busy || confirm !== 'DELETE'}>
+          Delete permanently
         </button>
       </form>
     </Card>

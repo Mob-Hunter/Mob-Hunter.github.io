@@ -67,8 +67,8 @@ class Agent(private val ctx: Context) {
         } catch (e: ApiException) {
             Log.w(TAG, "API error ${e.status} ${e.code}: ${e.message}")
             config.lastError = "${e.code}: ${e.message}"
-            if (e.status == 401 && e.message?.contains("revoked") == true) {
-                // Wiped or retired on the server: stop for good.
+            if (e.status == 401 && (e.message?.contains("revoked") == true || e.message?.contains("Unknown device") == true)) {
+                // Wiped, retired or deleted on the server: stop for good.
                 config.revoked = true
                 AgentService.stop(ctx)
             }

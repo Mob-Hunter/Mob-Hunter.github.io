@@ -20,6 +20,7 @@ const PERM_LABEL: Partial<Record<Permission, string>> = {
   'sessions.manage': 'View / revoke sessions',
   'employee.manage': 'Manage employees, leavers',
   'device.retire': 'Retire devices',
+  'device.delete': 'Delete retired/wiped devices',
   'apps.manage': 'Manage app catalogue',
   'settings.manage': 'Organisation settings',
   'privacy.dsar': 'Data-subject access export',

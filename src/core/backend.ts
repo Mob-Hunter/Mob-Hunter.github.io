@@ -829,7 +829,12 @@ export class Backend {
         rejected++;
         continue;
       }
-      if (await this.storeLocation(d, fix, null, fix.tier)) accepted++;
+      // Lost Mode fixes are filed under the ticket that turned Lost Mode on (purpose limitation).
+      const lostCmd =
+        fix.tier === 2
+          ? this.state.commands.filter((c) => c.deviceId === d.id && c.type === 'LOST_MODE_ON' && c.status === 'succeeded').sort((a, b) => b.issuedAt - a.issuedAt)[0] ?? null
+          : null;
+      if (await this.storeLocation(d, fix, lostCmd, fix.tier)) accepted++;
       else rejected++;
     }
     if (rejected) await this.audit.append({ at: this.clock(), actor: d.id, actorRole: 'DEVICE', action: 'location.batch_rejected', target: d.id, detail: { rejected } });
@@ -856,7 +861,7 @@ export class Backend {
       notification: { shownAt: fix.notification.shownAt, channel: String(fix.notification.channel).slice(0, 40), text: String(fix.notification.text).slice(0, 200) },
     };
     const sealed = await sealJson(clean, this.state.keys.locationKey, `${id}|${d.id}`);
-    const stored: StoredLocation = { id, deviceId: d.id, commandId: cmd?.id ?? null, ticket: cmd?.ticket ?? null, tier, receivedAt: this.clock(), sealed };
+    const stored: StoredLocation = { id, deviceId: d.id, commandId: tier === 2 && cmd?.type === 'LOST_MODE_ON' && cmd.status === 'succeeded' ? null : (cmd?.id ?? null), ticket: cmd?.ticket ?? null, tier, receivedAt: this.clock(), sealed };
     this.state.locations.push(stored);
     return true;
   }
@@ -997,22 +1002,105 @@ export class Backend {
   // ------------------------------------------------------------------ admin: location
 
   /** GET /admin/location-results — Location Operator only; every read is audited. */
-  async listLocationResults(sessionId: string, filter: { deviceId?: string; ticket: string }): Promise<LocationView[]> {
+  async listLocationResults(sessionId: string, filter: { deviceId?: string; ticket: string; tier?: 1 | 2 | 3; sinceMs?: number; onlyTicket?: boolean }): Promise<LocationView[]> {
     const { user } = this.requireSession(sessionId);
     this.guard(user, 'location.read');
     const ticket = filter.ticket?.trim();
     if (!ticket || !/^[A-Z][A-Z0-9]{1,9}-\d{1,8}$/.test(ticket)) throw new ApiError(422, 'ticket_required', 'Viewing location data requires a ticket reference');
     await this.runRetention();
-    const rows = this.state.locations.filter((l) => (filter.deviceId ? l.deviceId === filter.deviceId : true));
+    const since = Number(filter.sinceMs) > 0 ? this.clock() - Number(filter.sinceMs) : 0;
+    const rows = this.state.locations.filter(
+      (l) =>
+        (filter.deviceId ? l.deviceId === filter.deviceId : true) &&
+        (filter.tier ? l.tier === Number(filter.tier) : true) &&
+        (filter.onlyTicket ? l.ticket === ticket : true) &&
+        l.receivedAt >= since,
+    );
     const out: LocationView[] = [];
     for (const l of rows) {
       const fix = await openJson<LocationFix>(l.sealed, this.state.keys.locationKey);
       const d = this.state.devices.find((x) => x.id === l.deviceId);
       out.push({ id: l.id, deviceId: l.deviceId, deviceName: d ? displayName(d) : l.deviceId, commandId: l.commandId, ticket: l.ticket, tier: l.tier, receivedAt: l.receivedAt, fix });
     }
-    await this.audit.append({ at: this.clock(), actor: user.id, actorRole: user.role, action: 'location.viewed', target: filter.deviceId ?? '*', ticket, detail: { results: out.length } });
+    await this.audit.append({ at: this.clock(), actor: user.id, actorRole: user.role, action: 'location.viewed', target: filter.deviceId ?? '*', ticket, detail: { results: out.length, tier: filter.tier ?? null, sinceMs: filter.sinceMs ?? null, onlyTicket: !!filter.onlyTicket } });
     this.persist();
     return out.sort((a, b) => b.receivedAt - a.receivedAt);
+  }
+
+  /**
+   * Index of location tickets (no coordinates): which tickets have location
+   * requests or results, for which devices, and when. Lets the Location
+   * Operator pick the right ticket instead of guessing. Location Operator only.
+   */
+  listLocationTickets(sessionId: string): { ticket: string; devices: string[]; requests: number; fixes: number; lastAt: number; open: boolean }[] {
+    const { user } = this.requireSession(sessionId);
+    this.guard(user, 'location.read');
+    const by = new Map<string, { ticket: string; devices: Set<string>; requests: number; fixes: number; lastAt: number; open: boolean }>();
+    const entry = (t: string) => {
+      let e = by.get(t);
+      if (!e) by.set(t, (e = { ticket: t, devices: new Set(), requests: 0, fixes: 0, lastAt: 0, open: false }));
+      return e;
+    };
+    const name = (id: string) => {
+      const d = this.state.devices.find((x) => x.id === id);
+      return d ? displayName(d) : id;
+    };
+    for (const c of this.state.commands) {
+      if (!c.ticket || !['LOCATE', 'LOST_MODE_ON', 'LOST_MODE_OFF'].includes(c.type)) continue;
+      const e = entry(c.ticket);
+      e.devices.add(name(c.deviceId));
+      e.requests++;
+      e.lastAt = Math.max(e.lastAt, c.issuedAt);
+      if (c.type === 'LOST_MODE_ON' && this.state.devices.find((d) => d.id === c.deviceId)?.lostMode) e.open = true;
+    }
+    for (const l of this.state.locations) {
+      if (!l.ticket) continue;
+      const e = entry(l.ticket);
+      e.devices.add(name(l.deviceId));
+      e.fixes++;
+      e.lastAt = Math.max(e.lastAt, l.receivedAt);
+    }
+    return [...by.values()].map((e) => ({ ...e, devices: [...e.devices] })).sort((a, b) => b.lastAt - a.lastAt);
+  }
+
+  /**
+   * Permanently deletes a device record. Only for devices already retired or
+   * wiped (so no managed phone is left orphaned). Its commands, relay queue and
+   * encrypted location data are erased; the append-only audit log keeps a
+   * snapshot of what was deleted, by whom and why.
+   */
+  async deleteDevice(sessionId: string, deviceId: string, input: { reason: string; confirm: string }): Promise<{ deleted: string; commands: number; locations: number }> {
+    const { user } = this.requireSession(sessionId);
+    this.guard(user, 'device.delete');
+    const d = this.findDevice(deviceId);
+    if (d.state !== 'retired' && d.state !== 'wiped') {
+      throw new ApiError(409, 'device_active', 'Retire or wipe the device before deleting it, so no managed phone is left orphaned');
+    }
+    if (!input?.reason || input.reason.trim().length < 5) throw new ApiError(422, 'reason_required', 'Give a reason for deleting the device');
+    if (input.confirm !== 'DELETE') throw new ApiError(422, 'confirm_required', 'Type DELETE to confirm');
+    const commands = this.state.commands.filter((c) => c.deviceId === d.id).length;
+    const locations = this.state.locations.filter((l) => l.deviceId === d.id).length;
+    this.state.devices = this.state.devices.filter((x) => x.id !== d.id);
+    this.state.commands = this.state.commands.filter((c) => c.deviceId !== d.id);
+    this.commandsById = new Map(this.state.commands.map((c) => [c.id, c]));
+    this.state.locations = this.state.locations.filter((l) => l.deviceId !== d.id);
+    delete this.state.relayQueues[d.id];
+    delete this.state.deviceNonces[d.id];
+    this.state.wakes = this.state.wakes.filter((w) => w.deviceId !== d.id);
+    this.audit.append({
+      at: this.clock(),
+      actor: user.id,
+      actorRole: user.role,
+      action: 'device.deleted',
+      target: d.id,
+      detail: {
+        reason: input.reason.trim().slice(0, 300),
+        snapshot: { label: d.label, serial: d.serial, model: d.model, state: d.state, enrolledAt: d.enrolledAt, certSerial: d.cert.serial, assignedUserId: d.assignedUserId },
+        erased: { commands, locations },
+      },
+    });
+    this.persist();
+    return { deleted: d.id, commands, locations };
   }
 
   /** 30-day retention job (Cloudflare Queue/cron in production). */

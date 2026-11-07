@@ -42,6 +42,7 @@ export type Permission =
   | 'sessions.manage'
   | 'employee.manage'
   | 'device.retire'
+  | 'device.delete'
   | 'apps.manage'
   | 'settings.manage'
   | 'privacy.dsar'
@@ -67,6 +68,7 @@ export const PERMISSIONS: Record<Permission, readonly Role[]> = {
   'sessions.manage': ['SUPER_ADMIN', 'SECURITY'],
   'employee.manage': ['SUPER_ADMIN', 'DEVICE_ADMIN'],
   'device.retire': ['SUPER_ADMIN', 'DEVICE_ADMIN'],
+  'device.delete': ['SUPER_ADMIN', 'DEVICE_ADMIN'],
   'apps.manage': ['SUPER_ADMIN', 'DEVICE_ADMIN'],
   'settings.manage': ['SUPER_ADMIN'],
   // Data-subject access requests are handled by Security (acting for the DPO), never by the Location Operator.

@@ -254,6 +254,34 @@ describe('Worker HTTP API', () => {
     await expect(agent.checkin()).rejects.toMatchObject({ status: 401 });
   });
 
+  it('delete device and location ticket index over HTTP', async () => {
+    const ctx = await bootstrapped();
+    const opSecret = await ctx.mk('LOCATION_OPERATOR', 'op2@corp.test');
+    await ctx.signIn('op2@corp.test', opSecret, 'op');
+    const e = await ctx.admin('POST', '/admin/enrollments', {}, 'sa');
+    const fetcher = ((url: string, init?: RequestInit) => ctx.app.request(new URL(url).pathname + new URL(url).search, init)) as unknown as typeof fetch;
+    const agent = new SimulatedAgent(newAgentFromProvisioning(e.json.provisioning), new HttpDeviceTransport('https://fleet.test', fetcher));
+    await agent.enroll();
+    agent.acknowledge();
+    await agent.checkin();
+    const id = agent.state.deviceId!;
+    await ctx.admin('POST', `/admin/devices/${id}/commands`, { type: 'LOCATE', ticket: 'INC-55', reason: 'lost on train' }, 'op');
+    await agent.poll();
+    const idx = await ctx.admin('GET', '/admin/location-tickets', undefined, 'op');
+    expect(idx.json[0]).toMatchObject({ ticket: 'INC-55', fixes: 1 });
+    expect((await ctx.admin('GET', '/admin/location-tickets', undefined, 'sa')).status).toBe(403);
+    expect((await ctx.admin('GET', '/admin/location-results?ticket=INC-55&tier=2', undefined, 'op')).json).toHaveLength(0);
+    expect((await ctx.admin('GET', '/admin/location-results?ticket=INC-55&tier=1', undefined, 'op')).json).toHaveLength(1);
+
+    expect((await ctx.admin('POST', `/admin/devices/${id}/delete`, { reason: 'cleanup', confirm: 'DELETE' }, 'sa')).json.error).toBe('device_active');
+    await ctx.admin('POST', `/admin/devices/${id}/retire`, { reason: 'Returned to IT' }, 'sa');
+    const del = await ctx.admin('POST', `/admin/devices/${id}/delete`, { reason: 'Disposed securely', confirm: 'DELETE' }, 'sa');
+    expect(del.status).toBe(200);
+    expect(del.json).toMatchObject({ deleted: id, locations: 1 });
+    expect((await ctx.admin('GET', `/admin/devices/${id}`, undefined, 'sa')).status).toBe(404);
+    expect((await ctx.admin('GET', '/admin/audit/verify', undefined, 'sa')).json.ok).toBe(true);
+  });
+
   it('Cloudflare Access SSO: verified e-mail maps to a provisioned user only', async () => {
     const kp = (await crypto.subtle.generateKey({ name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' }, true, ['sign', 'verify'])) as CryptoKeyPair;
     const jwk = (await crypto.subtle.exportKey('jwk', kp.publicKey)) as JsonWebKey;

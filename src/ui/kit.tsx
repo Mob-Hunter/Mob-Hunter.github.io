@@ -224,51 +224,135 @@ export function QrImage({ text, label }: { text: string; label: string }) {
   return src ? <img className="qr" src={src} alt={label} width={260} height={260} /> : <div className="qr qr-loading">Generating QR…</div>;
 }
 
-/** Dependency-free map: plots fixes on a grid with accuracy circles (no third-party tiles = no tracking). */
-export function MiniMap({ points }: { points: { lat: number; lng: number; accuracyM: number; label: string; highlight?: boolean }[] }) {
+export type MapPoint = {
+  lat: number;
+  lng: number;
+  accuracyM: number;
+  label: string;
+  highlight?: boolean;
+  /** 1 on-demand, 2 Lost Mode, 3 work hours */
+  tier?: number;
+  /** points with the same group are joined as a track (e.g. one device) */
+  group?: string;
+  at?: number;
+  /** text drawn next to highlighted pins */
+  caption?: string;
+};
+
+const TIER_CLASS: Record<number, string> = { 1: 'pin-t1', 2: 'pin-t2', 3: 'pin-t3' };
+
+/**
+ * Dependency-free map: plots fixes on a grid with accuracy circles, per-device
+ * tracks, labels, a scale bar and a legend. No third-party tiles, so viewing
+ * location never leaks coordinates to a map provider.
+ */
+export function MiniMap({ points, title }: { points: MapPoint[]; title?: string }) {
   if (!points.length) return <div className="minimap minimap-empty">No location fixes to show</div>;
   const lats = points.map((p) => p.lat);
   const lngs = points.map((p) => p.lng);
   const pad = 0.004;
-  const minLat = Math.min(...lats) - pad;
-  const maxLat = Math.max(...lats) + pad;
-  const minLng = Math.min(...lngs) - pad;
-  const maxLng = Math.max(...lngs) + pad;
+  let minLat = Math.min(...lats) - pad;
+  let maxLat = Math.max(...lats) + pad;
+  let minLng = Math.min(...lngs) - pad;
+  let maxLng = Math.max(...lngs) + pad;
   const W = 600;
   const H = 360;
+  // Keep the aspect ratio true to the ground so distances are not distorted.
+  const cosLat = Math.cos((((minLat + maxLat) / 2) * Math.PI) / 180);
+  const spanX = (maxLng - minLng) * cosLat;
+  const spanY = maxLat - minLat;
+  if (spanX / spanY > W / H) {
+    const need = (spanX * H) / W - spanY;
+    minLat -= need / 2;
+    maxLat += need / 2;
+  } else {
+    const need = ((spanY * W) / H - spanX) / cosLat;
+    minLng -= need / 2;
+    maxLng += need / 2;
+  }
   const x = (lng: number) => ((lng - minLng) / (maxLng - minLng || 1)) * W;
   const y = (lat: number) => H - ((lat - minLat) / (maxLat - minLat || 1)) * H;
-  const metersPerPx = ((maxLng - minLng) * 111_320 * Math.cos((minLat * Math.PI) / 180)) / W;
+  const metersPerPx = ((maxLng - minLng) * 111_320 * cosLat) / W;
+  const scaleM = [50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000].find((m) => m / metersPerPx > 60) ?? 50000;
+  const scalePx = scaleM / metersPerPx;
+  const groups = new Map<string, MapPoint[]>();
+  for (const p of points) if (p.group) groups.set(p.group, [...(groups.get(p.group) ?? []), p]);
+  const tiers = [...new Set(points.map((p) => p.tier ?? 1))].sort();
   const latest = points[0];
   return (
     <figure className="minimap">
-      <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`Map with ${points.length} location fixes`}>
+      <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={title ?? `Map with ${points.length} location fixes`}>
         <defs>
           <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
             <path d="M 40 0 L 0 0 0 40" fill="none" className="grid-line" />
           </pattern>
         </defs>
         <rect width={W} height={H} fill="url(#grid)" className="map-bg" />
+        {[...groups.values()].map((g, i) =>
+          g.length > 1 ? (
+            <polyline
+              key={i}
+              className="track"
+              points={g
+                .slice()
+                .sort((a, b) => (a.at ?? 0) - (b.at ?? 0))
+                .map((p) => `${x(p.lng).toFixed(1)},${y(p.lat).toFixed(1)}`)
+                .join(' ')}
+            />
+          ) : null,
+        )}
         {points
           .slice()
           .reverse()
           .map((p, i) => (
             <g key={i}>
               <circle cx={x(p.lng)} cy={y(p.lat)} r={Math.max(4, p.accuracyM / (metersPerPx || 1))} className="acc" />
-              <circle cx={x(p.lng)} cy={y(p.lat)} r={p.highlight ? 8 : 5} className={p.highlight ? 'pin pin-hi' : 'pin'}>
+              <circle cx={x(p.lng)} cy={y(p.lat)} r={p.highlight ? 8 : 5} className={`pin ${TIER_CLASS[p.tier ?? 1] ?? ''} ${p.highlight ? 'pin-hi' : ''}`}>
                 <title>{p.label}</title>
               </circle>
+              {p.highlight && p.caption && (
+                <text x={x(p.lng) + 12} y={y(p.lat) + 4} className="map-label">
+                  {p.caption}
+                </text>
+              )}
             </g>
           ))}
+        <g transform={`translate(12 ${H - 16})`} className="scale">
+          <line x1="0" y1="0" x2={scalePx} y2="0" />
+          <line x1="0" y1="-4" x2="0" y2="4" />
+          <line x1={scalePx} y1="-4" x2={scalePx} y2="4" />
+          <text x={scalePx / 2} y="-7" textAnchor="middle">
+            {scaleM >= 1000 ? `${scaleM / 1000} km` : `${scaleM} m`}
+          </text>
+        </g>
+        <text x={W - 12} y="20" textAnchor="end" className="map-north">
+          N ↑
+        </text>
       </svg>
       <figcaption>
-        Latest: {latest.lat.toFixed(5)}, {latest.lng.toFixed(5)} (±{Math.round(latest.accuracyM)} m) ·{' '}
-        <a href={`https://www.openstreetmap.org/?mlat=${latest.lat}&mlon=${latest.lng}#map=17/${latest.lat}/${latest.lng}`} target="_blank" rel="noopener noreferrer">
-          Open in OpenStreetMap
-        </a>
+        <span className="map-legend">
+          {tiers.map((t) => (
+            <span key={t}>
+              <i className={`dot ${TIER_CLASS[t]}`} /> {t === 1 ? 'On-demand' : t === 2 ? 'Lost Mode' : 'Work hours'}
+            </span>
+          ))}
+          <span>
+            <i className="dot dot-acc" /> accuracy
+          </span>
+        </span>
+        <span>
+          Latest: {latest.lat.toFixed(5)}, {latest.lng.toFixed(5)} (±{Math.round(latest.accuracyM)} m) ·{' '}
+          <a href={osmLink(latest.lat, latest.lng)} target="_blank" rel="noopener noreferrer">
+            Open in OpenStreetMap
+          </a>
+        </span>
       </figcaption>
     </figure>
   );
+}
+
+export function osmLink(lat: number, lng: number): string {
+  return `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lng}#map=17/${lat}/${lng}`;
 }
 
 let fieldSeq = 0;

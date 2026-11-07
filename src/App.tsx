@@ -26,7 +26,7 @@ const NAV: NavItem[] = [
   { to: '/devices', label: 'Devices', icon: '▤' },
   { to: '/compliance', label: 'Compliance', icon: '✓' },
   { to: '/enrol', label: 'Add devices', icon: '＋', perm: 'enrollment.create' },
-  { to: '/locations', label: 'Locations', icon: '⌖', perm: 'location.read' },
+  { to: '/locations', label: 'Locations', icon: '⌖', anyOf: ['location.read', 'location.purge'] },
   { to: '/employees', label: 'Employees', icon: '☺' },
   { to: '/users', label: 'Users & access', icon: '⚿', anyOf: ['users.manage', 'sessions.manage'] },
   { to: '/roles', label: 'Roles', icon: '▦' },

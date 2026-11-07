@@ -19,6 +19,8 @@ export type Transparency = Awaited<ReturnType<Backend['transparency']>>;
 export type InstallPageData = Awaited<ReturnType<Backend['installPage']>>;
 export type Enrollment = Awaited<ReturnType<Backend['createEnrollment']>>;
 export type PolicyPatch = Parameters<Backend['updatePolicy']>[2];
+export type LocationTicket = ReturnType<Backend['listLocationTickets']>[number];
+export type LocationFilter = { deviceId?: string; ticket: string; tier?: 1 | 2 | 3; sinceMs?: number; onlyTicket?: boolean };
 export type Health = { service: 'fleetguard'; mode: 'demo' | 'server'; version: string; needsBootstrap: boolean; sso: boolean };
 export type { ComplianceIssue, DeviceView, LocationView, Notice };
 
@@ -40,6 +42,7 @@ export interface ConsoleApi {
   updateDevice(id: string, patch: { label?: string | null; assignedUserId?: string | null }): Promise<DeviceView>;
   updatePolicy(id: string, patch: PolicyPatch, justification: string): Promise<DeviceView>;
   retireDevice(id: string, reason: string): Promise<DeviceView>;
+  deleteDevice(id: string, input: { reason: string; confirm: string }): Promise<{ deleted: string; commands: number; locations: number }>;
   compliance(): Promise<{ deviceId: string; deviceName: string; issues: ComplianceIssue[] }[]>;
   // commands
   issueCommand(deviceId: string, input: { type: CommandType; ticket?: string; reason?: string; params?: Record<string, unknown> }): Promise<Command>;
@@ -51,7 +54,8 @@ export interface ConsoleApi {
   listEnrollments(): Promise<Omit<EnrollmentToken, 'tokenHash'>[]>;
   installPage(token: string): Promise<InstallPageData>;
   // location
-  listLocationResults(filter: { deviceId?: string; ticket: string }): Promise<LocationView[]>;
+  listLocationResults(filter: LocationFilter): Promise<LocationView[]>;
+  listLocationTickets(): Promise<LocationTicket[]>;
   purgeNow(): Promise<number>;
   // audit
   listAudit(): Promise<AuditRow[]>;
@@ -136,6 +140,9 @@ export class LocalConsoleApi implements ConsoleApi {
   retireDevice(id: string, reason: string) {
     return this.b.retireDevice(this.s, id, reason);
   }
+  deleteDevice(id: string, input: { reason: string; confirm: string }) {
+    return this.b.deleteDevice(this.s, id, input);
+  }
   async compliance() {
     return this.b.compliance(this.s);
   }
@@ -162,8 +169,11 @@ export class LocalConsoleApi implements ConsoleApi {
   installPage(token: string) {
     return this.b.installPage(token);
   }
-  listLocationResults(filter: { deviceId?: string; ticket: string }) {
+  listLocationResults(filter: LocationFilter) {
     return this.b.listLocationResults(this.s, filter);
+  }
+  async listLocationTickets() {
+    return this.b.listLocationTickets(this.s);
   }
   purgeNow() {
     return this.b.purgeNow(this.s);
@@ -299,6 +309,9 @@ export class RemoteConsoleApi implements ConsoleApi {
   retireDevice(id: string, reason: string) {
     return this.req<DeviceView>('POST', `/admin/devices/${encodeURIComponent(id)}/retire`, { reason });
   }
+  deleteDevice(id: string, input: { reason: string; confirm: string }) {
+    return this.req<{ deleted: string; commands: number; locations: number }>('POST', `/admin/devices/${encodeURIComponent(id)}/delete`, input);
+  }
   compliance() {
     return this.req<{ deviceId: string; deviceName: string; issues: ComplianceIssue[] }[]>('GET', '/admin/compliance');
   }
@@ -323,8 +336,14 @@ export class RemoteConsoleApi implements ConsoleApi {
   installPage(token: string) {
     return this.req<InstallPageData>('GET', `/e/${encodeURIComponent(token)}`);
   }
-  listLocationResults(filter: { deviceId?: string; ticket: string }) {
-    return this.req<LocationView[]>('GET', `/admin/location-results${this.q({ deviceId: filter.deviceId, ticket: filter.ticket })}`);
+  listLocationResults(filter: LocationFilter) {
+    return this.req<LocationView[]>(
+      'GET',
+      `/admin/location-results${this.q({ deviceId: filter.deviceId, ticket: filter.ticket, tier: filter.tier ? String(filter.tier) : undefined, sinceMs: filter.sinceMs ? String(filter.sinceMs) : undefined, onlyTicket: filter.onlyTicket })}`,
+    );
+  }
+  listLocationTickets() {
+    return this.req<LocationTicket[]>('GET', '/admin/location-tickets');
   }
   async purgeNow() {
     return (await this.req<{ purged: number }>('POST', '/admin/location-purge', {})).purged;
