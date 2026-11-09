@@ -193,7 +193,7 @@ function Shell({ children }: { children: ReactNode }) {
       <main className="content" id="main" tabIndex={-1}>
         {children}
       </main>
-      <CommandPalette open={searchOpen} onClose={() => setSearchOpen(false)} pages={paletteEntries} />
+      {searchOpen && <CommandPalette open onClose={() => setSearchOpen(false)} pages={paletteEntries} />}
     </div>
   );
 }

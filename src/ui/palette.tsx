@@ -17,12 +17,9 @@ export function CommandPalette({ open, onClose, pages }: { open: boolean; onClos
   const [employees] = useQuery((api) => api.listEmployees(), [open], { enabled: open, live: false });
   const [users] = useQuery((api) => api.listUsers(), [open], { enabled: open, live: false });
 
-  useEffect(() => {
-    if (!open) return;
-    setQ('');
-    setActive(0);
-    requestAnimationFrame(() => input.current?.focus());
-  }, [open]);
+  // Mounted fresh each time it opens (see App), so it starts empty with no reset effect that could
+  // race with fast typing; the input is focused on mount.
+  useEffect(() => input.current?.focus(), []);
 
   const results = useMemo(() => {
     const all: PaletteEntry[] = [
