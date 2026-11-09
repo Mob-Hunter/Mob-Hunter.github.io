@@ -315,6 +315,23 @@ export class SimulatedAgent {
         await this.postResult(p.id, { status: 'succeeded', detail: `Installed ${pkg}` });
         return 'succeeded';
       }
+      case 'UNINSTALL_APP': {
+        const pkg = String(p.params.packageName);
+        this.state.installedApps = this.state.installedApps.filter((x) => x !== pkg);
+        await this.postResult(p.id, { status: 'succeeded', detail: `Uninstalled ${pkg}` });
+        return 'succeeded';
+      }
+      case 'MESSAGE': {
+        this.notify({ channel: 'management', importance: 'high', title: String(p.params.title ?? 'Message from your IT team'), text: String(p.params.text ?? ''), persistent: false });
+        await this.postResult(p.id, { status: 'succeeded', detail: 'Message shown' });
+        return 'succeeded';
+      }
+      case 'RING': {
+        // Audible and visible: the phone rings at full volume and says why, so it is never covert.
+        this.notify({ channel: 'management', importance: 'high', title: 'Your IT team is ringing this phone', text: 'This sound helps find a misplaced phone. Tap to stop it.', persistent: false });
+        await this.postResult(p.id, { status: 'succeeded', detail: 'Rang for 30 s at full volume' });
+        return 'succeeded';
+      }
       case 'RELEASE': {
         // Report first: once uninstalled there is no agent left to report.
         await this.postResult(p.id, { status: 'succeeded', detail: 'Restrictions cleared, device owner released, agent uninstalled' });

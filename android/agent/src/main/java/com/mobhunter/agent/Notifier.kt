@@ -16,6 +16,7 @@ object Notifier {
     const val CH_LOST = "lost_mode"
     const val CH_CONTINUOUS = "continuous_location"
     const val CH_MANAGEMENT = "management"
+    const val CH_MESSAGE = "it_message"
     const val ID_FOREGROUND = 1001
     private var nextId = 2000
 
@@ -35,6 +36,9 @@ object Notifier {
                 },
                 NotificationChannel(CH_MANAGEMENT, "Device management", NotificationManager.IMPORTANCE_LOW).apply {
                     description = "Enrolment, policy and other management events"
+                },
+                NotificationChannel(CH_MESSAGE, "Messages from IT", NotificationManager.IMPORTANCE_HIGH).apply {
+                    description = "Messages and ring requests sent by your IT team"
                 },
             ),
         )

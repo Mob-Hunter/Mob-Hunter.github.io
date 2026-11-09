@@ -267,6 +267,38 @@ try {
   await page.getByText('Timesheets', { exact: true }).waitFor();
   ok('organisation settings saved; app catalogue shown');
 
+  // MDM parity: groups + asset tag on a device, restrictions, then a bulk message to a group.
+  await go('Devices');
+  await page.getByRole('heading', { name: 'Devices', exact: true }).waitFor();
+  await page.getByRole('link', { name: 'Kavya sales phone' }).click();
+  await page.getByRole('heading', { name: 'Kavya sales phone' }).waitFor();
+  await page.getByLabel('Groups').fill('Sales, Colombo');
+  await page.getByLabel('Asset tag').fill('MH-000777');
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await page.locator('.toast-ok', { hasText: 'recorded in the audit log' }).first().waitFor();
+  await page.getByRole('switch', { name: /Disable camera/ }).check();
+  await page.getByRole('switch', { name: /Block screenshots/ }).check();
+  await page.getByLabel('Justification (DPIA / ticket / programme)').fill('Secure-site policy, SEC-12');
+  await page.getByRole('button', { name: 'Save policy (2 changes)' }).click();
+  await page.locator('.toast-ok', { hasText: 'Policy updated' }).waitFor();
+  await page.getByRole('button', { name: 'No changes' }).waitFor();
+  assert.equal(await page.getByRole('switch', { name: /Disable camera/ }).isChecked(), true);
+  ok('device grouped and asset-tagged; camera + screenshot restrictions saved as a new policy version');
+
+  await go('Devices');
+  await page.getByRole('heading', { name: 'Devices', exact: true }).waitFor();
+  await page.getByLabel('Filter by group').selectOption('Sales');
+  await page.getByText('MH-000777').waitFor();
+  assert.equal(await page.locator('.device-list > li').count(), 1);
+  await page.getByLabel('Select all shown devices').check();
+  await page.getByRole('button', { name: 'Message…' }).click();
+  await page.getByLabel(/Message to 1 phone/).fill('Team meeting moved to 3 pm');
+  await page.getByRole('button', { name: 'Send message' }).click();
+  await page.locator('.toast-ok', { hasText: 'Message: sent to 1 device' }).waitFor();
+  await go(/Device simulator/);
+  await page.locator('.notif', { hasText: 'Team meeting moved to 3 pm' }).first().waitFor({ timeout: 10_000 });
+  ok('group filter + bulk MESSAGE delivered as a visible notification on the phone');
+
   // Device lifecycle end: retire, then delete (Super Admin). Super Admin holds every permission, so the
   // device page offers the ticketed location view instead of the "Restricted" notice.
   await go('Devices');

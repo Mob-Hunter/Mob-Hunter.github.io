@@ -193,6 +193,11 @@ export function createApp(cfg: HttpConfig) {
   app.post('/admin/devices/:id/cancel-removal', async (c) => c.json(await c.var.backend.cancelRemoval(c.var.sid, c.req.param('id'))));
   app.post('/admin/devices/:id/delete', async (c) => c.json(await c.var.backend.deleteDevice(c.var.sid, c.req.param('id'), await body(c))));
   app.post('/admin/devices/:id/retire', async (c) => c.json(await c.var.backend.retireDevice(c.var.sid, c.req.param('id'), (await body<{ reason: string }>(c)).reason)));
+  app.post('/admin/commands/bulk', async (c) => {
+    const b = await body<{ deviceIds: string[]; type: string; params?: Record<string, unknown> }>(c);
+    if (!isCommandType(b.type)) throw new ApiError(422, 'invalid_command', 'Unknown command type');
+    return c.json(await c.var.backend.issueBulkCommand(c.var.sid, { deviceIds: b.deviceIds, type: b.type, params: b.params }));
+  });
   app.post('/admin/devices/:id/commands', async (c) => {
     const b = await body<{ type: string; ticket?: string; reason?: string; params?: Record<string, unknown> }>(c);
     if (!isCommandType(b.type)) throw new ApiError(422, 'invalid_command', 'Unknown command type');

@@ -51,6 +51,11 @@ export function defaultPolicy(): DevicePolicy {
     continuousLocation: false,
     continuousIntervalMin: 15,
     workingHours: { startHour: 8, endHour: 18, days: [1, 2, 3, 4, 5], timeZone: 'Asia/Colombo' },
+    cameraDisabled: false,
+    screenCaptureDisabled: false,
+    bluetoothDisabled: false,
+    disallowAddUser: false,
+    disallowConfigWifi: false,
     securityLogging: false,
     networkLogging: false,
   };

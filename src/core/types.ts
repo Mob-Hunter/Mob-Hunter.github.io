@@ -76,6 +76,13 @@ export interface DevicePolicy {
   continuousLocation: boolean;
   continuousIntervalMin: number;
   workingHours: { startHour: number; endHour: number; days: number[]; timeZone: string };
+  /** Restrictions (device owner only). Absent on policies from before they existed = off. */
+  cameraDisabled?: boolean;
+  /** Blocks screenshots and screen recording ON the phone — the console never sees the screen. */
+  screenCaptureDisabled?: boolean;
+  bluetoothDisabled?: boolean;
+  disallowAddUser?: boolean;
+  disallowConfigWifi?: boolean;
   /** Security / network logging stay OFF (design-doc requirement). */
   securityLogging: false;
   networkLogging: false;
@@ -131,6 +138,10 @@ export interface Device {
    * location and telemetry only; policy, wipe, reboot and silent installs are unavailable.
    */
   managementMode?: ManagementMode;
+  /** Free-form groups such as "Sales" or "Warehouse"; used for filtering and bulk commands. */
+  tags?: string[];
+  assetTag?: string | null;
+  notes?: string | null;
   /** What the agent reports it can do right now (permissions the user granted). */
   capabilities?: DeviceCapabilities | null;
 }

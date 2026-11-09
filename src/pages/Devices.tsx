@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Badge, Card, Empty, ErrorBox, Field, fmtAgo, useAction, useCan, useQuery, useRuntime, useToast, errorText } from '../ui/kit';
 import type { DeviceView } from '../core/backend';
+import type { CommandType } from '../core/rbac';
 
 export function stateBadge(d: Pick<DeviceView, 'state' | 'lostMode' | 'policyAckAt'> & { pendingRemoval?: DeviceView['pendingRemoval'] }) {
   if (d.lostMode) return <Badge tone="bad">Lost Mode</Badge>;
@@ -31,18 +32,24 @@ export function DevicesPage() {
   // Local state keeps the tabs instant; the URL keeps the filter shareable.
   const [tab, setTab] = useState<Tab>(TABS.some((t) => t.id === initial) ? initial : 'all');
   const [q, setQ] = useState('');
+  const [group, setGroup] = useState(params.get('group') ?? '');
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [devices, err] = useQuery((api) => api.listDevices({ q }), [q]);
   const canRename = useCan('device.update');
   const canEnrol = useCan('enrollment.create');
 
   const counts = useMemo(() => Object.fromEntries(TABS.map((t) => [t.id, (devices ?? []).filter(t.match).length])) as Record<Tab, number>, [devices]);
-  const shown = (devices ?? []).filter(TABS.find((t) => t.id === tab)!.match);
+  const groups = useMemo(() => [...new Set((devices ?? []).flatMap((d) => d.tags ?? []))].sort((a, b) => a.localeCompare(b)), [devices]);
+  const shown = (devices ?? []).filter(TABS.find((t) => t.id === tab)!.match).filter((d) => !group || (d.tags ?? []).includes(group));
   const selectedDevices = shown.filter((d) => selected.has(d.id));
   const choose = (t: Tab) => {
     setTab(t);
     setSelected(new Set());
     setParams(t === 'all' ? {} : t === 'unnamed' ? { unnamed: '1' } : { tab: t }, { replace: true });
+  };
+  const chooseGroup = (g: string) => {
+    setGroup(g);
+    setSelected(new Set());
   };
   const toggle = (id: string) =>
     setSelected((s) => {
@@ -71,6 +78,16 @@ export function DevicesPage() {
       </div>
       <div className="toolbar">
         <input type="search" placeholder="Search devices…" title="Search by name, serial, model or employee" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search devices" />
+        {groups.length > 0 && (
+          <select value={group} onChange={(e) => chooseGroup(e.target.value)} aria-label="Filter by group">
+            <option value="">All groups</option>
+            {groups.map((g) => (
+              <option key={g} value={g}>
+                {g}
+              </option>
+            ))}
+          </select>
+        )}
         {shown.length > 0 && (
           <label className="check small">
             <input
@@ -97,7 +114,17 @@ export function DevicesPage() {
                   </Link>
                   <span className="muted small">
                     {d.model ?? 'Unknown model'} · {d.serial ?? 'serial pending'} · {d.assignedUser ? d.assignedUser.name : 'unassigned'}
+                    {d.assetTag ? ` · ${d.assetTag}` : ''}
                   </span>
+                  {(d.tags?.length ?? 0) > 0 && (
+                    <span className="tag-list">
+                      {d.tags!.map((t) => (
+                        <button key={t} type="button" className={`tag${group === t ? ' tag-on' : ''}`} onClick={() => chooseGroup(group === t ? '' : t)} title={`Show only “${t}”`}>
+                          {t}
+                        </button>
+                      ))}
+                    </span>
+                  )}
                 </div>
                 <div className="device-meta">
                   {stateBadge(d)}
@@ -136,7 +163,13 @@ function BulkBar({ devices, onDone }: { devices: DeviceView[]; onDone: () => voi
   const canSync = useCan('command.SYNC_POLICY');
   const canRetire = useCan('device.retire');
   const canDelete = useCan('device.delete');
-  const [mode, setMode] = useState<null | 'retire' | 'delete'>(null);
+  const canMessage = useCan('command.MESSAGE');
+  const canRing = useCan('command.RING');
+  const canInstall = useCan('command.INSTALL_APP');
+  const [settings] = useQuery((api) => api.getSettings(), [], { live: false });
+  const [mode, setMode] = useState<null | 'retire' | 'delete' | 'message' | 'install' | 'uninstall'>(null);
+  const [msgText, setMsgText] = useState('');
+  const [pkg, setPkg] = useState('');
   const [reason, setReason] = useState('');
   const [confirm, setConfirm] = useState('');
   const [busy, setBusy] = useState(false);
@@ -165,20 +198,60 @@ function BulkBar({ devices, onDone }: { devices: DeviceView[]; onDone: () => voi
     onDone();
   };
 
+  /** One request for the whole selection; the server checks and audits each phone. */
+  const bulk = async (label: string, type: CommandType, params?: Record<string, unknown>) => {
+    setBusy(true);
+    try {
+      const { results } = await rt.api.issueBulkCommand({ deviceIds: live.map((d) => d.id), type, params });
+      const failed = results.filter((r) => !r.ok);
+      const name = (id: string) => live.find((d) => d.id === id)?.displayName ?? id;
+      if (failed.length) toast('err', `${label}: sent to ${results.length - failed.length}, not to ${failed.length} — ${name(failed[0].deviceId)}: ${failed[0].error}`);
+      else toast('ok', `${label}: sent to ${results.length} device(s)`);
+    } catch (e) {
+      toast('err', `${label}: ${errorText(e)}`);
+    } finally {
+      setBusy(false);
+      rt.emit();
+      setMode(null);
+      setMsgText('');
+      setPkg('');
+    }
+  };
+
   return (
     <Card className="bulk-bar">
       <div className="bulk-head">
         <strong>{devices.length} selected</strong>
         <div className="btn-row">
           {canSync && live.length > 0 && (
-            <button className="btn btn-sm" disabled={busy} onClick={() => void each('Sync policy', live, (d) => rt.api.issueCommand(d.id, { type: 'SYNC_POLICY' }))}>
+            <button className="btn btn-sm" disabled={busy} onClick={() => void bulk('Sync policy', 'SYNC_POLICY')}>
               Sync policy
             </button>
           )}
           {canLock && live.length > 0 && (
-            <button className="btn btn-sm" disabled={busy} onClick={() => void each('Lock', live, (d) => rt.api.issueCommand(d.id, { type: 'LOCK' }))}>
+            <button className="btn btn-sm" disabled={busy} onClick={() => void bulk('Lock', 'LOCK')}>
               Lock
             </button>
+          )}
+          {canMessage && live.length > 0 && (
+            <button className="btn btn-sm" disabled={busy} onClick={() => setMode('message')}>
+              Message…
+            </button>
+          )}
+          {canRing && live.length > 0 && (
+            <button className="btn btn-sm" disabled={busy} onClick={() => void bulk('Ring', 'RING')}>
+              Ring
+            </button>
+          )}
+          {canInstall && live.length > 0 && (settings?.apps.length ?? 0) > 0 && (
+            <>
+              <button className="btn btn-sm" disabled={busy} onClick={() => setMode('install')}>
+                Install app…
+              </button>
+              <button className="btn btn-sm" disabled={busy} onClick={() => setMode('uninstall')}>
+                Uninstall app…
+              </button>
+            </>
           )}
           {canRetire && live.length > 0 && (
             <button className="btn btn-sm" disabled={busy} onClick={() => setMode('retire')}>
@@ -195,6 +268,45 @@ function BulkBar({ devices, onDone }: { devices: DeviceView[]; onDone: () => voi
           </button>
         </div>
       </div>
+      {mode === 'message' && (
+        <form
+          className="row-form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void bulk('Message', 'MESSAGE', { text: msgText });
+          }}
+        >
+          <Field label={`Message to ${live.length} phone(s)`}>
+            <input value={msgText} onChange={(e) => setMsgText(e.target.value)} required maxLength={300} autoFocus placeholder="e.g. Please install the update tonight." />
+          </Field>
+          <button className="btn btn-primary" disabled={busy}>
+            Send message
+          </button>
+        </form>
+      )}
+      {(mode === 'install' || mode === 'uninstall') && (
+        <form
+          className="row-form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void bulk(mode === 'install' ? 'Install app' : 'Uninstall app', mode === 'install' ? 'INSTALL_APP' : 'UNINSTALL_APP', { packageName: pkg });
+          }}
+        >
+          <Field label={`App to ${mode} on ${live.length} phone(s)`} hint="Company (factory-reset) phones only; others are skipped and listed.">
+            <select value={pkg} onChange={(e) => setPkg(e.target.value)} required autoFocus>
+              <option value="">— choose an app —</option>
+              {settings?.apps.map((a) => (
+                <option key={a.packageName} value={a.packageName}>
+                  {a.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <button className="btn btn-primary" disabled={busy}>
+            {mode === 'install' ? 'Install' : 'Uninstall'}
+          </button>
+        </form>
+      )}
       {mode === 'retire' && (
         <form
           className="row-form"
