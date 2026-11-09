@@ -453,3 +453,21 @@ h1.brand { margin: 0; font-size: 1.4rem; }
 .lp-route { stroke: #38bdf8; stroke-width: 2.5; fill: none; stroke-dasharray: 4 4; }
 .lp-acc { fill: rgb(56 189 248 / 18%); stroke: rgb(56 189 248 / 50%); }
 .lp-pin { fill: #ef4444; stroke: #fff; stroke-width: 2; }
+
+/* ---------- Phone enrolment page ---------- */
+.btn-block { display: flex; width: 100%; }
+.enrol-hero { display: grid; gap: 16px; padding: 20px; border-top: 4px solid var(--primary); }
+.enrol-flow { list-style: none; counter-reset: step; margin: 0; padding: 0; display: grid; gap: 4px; }
+.enrol-flow li { counter-increment: step; position: relative; padding: 8px 0 8px 46px; display: grid; gap: 2px; color: var(--muted); }
+.enrol-flow li strong { color: var(--text); font-size: 1.02rem; }
+.enrol-flow li::before { content: counter(step); position: absolute; left: 0; top: 6px; width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; border: 2px solid var(--border); color: var(--muted); background: var(--surface); }
+.enrol-flow li.current::before { border-color: var(--primary); background: var(--primary); color: var(--primary-ink); }
+.enrol-flow li.done::before { content: '✓'; border-color: var(--ok); background: var(--ok); color: #fff; }
+.enrol-company { padding: 0; }
+.enrol-company > summary { cursor: pointer; padding: 16px; list-style-position: inside; }
+.enrol-company[open] > summary { border-bottom: 1px solid var(--border); }
+.enrol-company > .enrol-grid { padding: 16px; }
+.seg { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 4px; background: var(--surface-2); border-radius: 10px; margin-bottom: 16px; }
+.seg button { font: inherit; font-weight: 600; border: 0; background: transparent; color: var(--muted); padding: 10px 8px; border-radius: 8px; cursor: pointer; display: grid; gap: 2px; text-align: center; min-height: 52px; }
+.seg button small { font-weight: 500; font-size: .74rem; }
+.seg button.on { background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
