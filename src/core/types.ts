@@ -3,7 +3,8 @@ import type { Sealed } from './crypto';
 import type { CommandType, Role } from './rbac';
 
 export type DeviceState = 'enrolled' | 'active' | 'lost' | 'wiped' | 'retired' | 'released';
-export type Platform = 'android' | 'ios';
+export type Platform = 'android' | 'ios' | 'windows' | 'linux' | 'macos';
+export const DESKTOP_PLATFORMS: readonly Platform[] = ['windows', 'linux', 'macos'];
 
 export interface User {
   id: string;
@@ -96,6 +97,32 @@ export interface Telemetry {
   storageTotalGb: number;
   integrity: 'MEETS_STRONG_INTEGRITY' | 'MEETS_DEVICE_INTEGRITY' | 'MEETS_BASIC_INTEGRITY' | 'NOT_EVALUATED' | 'FAILED';
   patchLevel: string;
+  /** true on desktops without a battery (battery fields are then meaningless) */
+  noBattery?: boolean;
+  /** Security posture signals for threat detection. Absent fields mean "not reported". */
+  security?: SecurityPosture;
+}
+
+/**
+ * Configuration and integrity signals the agent reads from the OS. They describe the device's
+ * security settings only — never content, messages, files, browsing or apps the employee uses.
+ */
+export interface SecurityPosture {
+  /** rooted / jailbroken / system integrity broken */
+  compromised?: boolean;
+  devOptions?: boolean;
+  usbDebugging?: boolean;
+  unknownSources?: boolean;
+  screenLock?: boolean;
+  encrypted?: boolean;
+  firewall?: boolean;
+  antivirus?: boolean;
+  secureBoot?: boolean;
+  /** connected to a Wi-Fi network without encryption (no SSID is reported) */
+  openWifi?: boolean;
+  /** OS updates waiting to be installed */
+  pendingUpdates?: number;
+  agentVersion?: string;
 }
 
 export interface DeviceCertificate {
@@ -293,6 +320,34 @@ export interface BackendState {
   lastPurgeAt: number | null;
   settings?: OrgSettings;
   incidents?: Incident[];
+  threats?: ThreatState;
+}
+
+export type ThreatSeverity = 'critical' | 'high' | 'medium' | 'low';
+
+export interface ThreatRecord {
+  firstSeen: number;
+  lastSeen: number;
+  resolvedAt: number | null;
+  detail: string;
+  /** risk accepted by an administrator, with a reason, until a date */
+  accepted?: { by: string; at: number; until: number; reason: string } | null;
+}
+
+export interface ThreatEvent {
+  at: number;
+  deviceId: string;
+  key: string;
+  kind: 'detected' | 'resolved' | 'accepted' | 'reopened';
+  severity: ThreatSeverity;
+}
+
+export interface ThreatState {
+  /** deviceId → threat key → record */
+  records: Record<string, Record<string, ThreatRecord>>;
+  events: ThreatEvent[];
+  /** one snapshot per UTC day */
+  history: { day: string; critical: number; high: number; medium: number; low: number; devicesAtRisk: number; devices: number; avgScore: number }[];
 }
 
 export interface DeviceAuth {

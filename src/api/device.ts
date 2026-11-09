@@ -29,7 +29,7 @@ export interface EnrollResponse {
 
 export interface DeviceTransport {
   readonly kind: 'local' | 'http';
-  enroll(body: { token: string; devicePublicKey: string; keyAlg?: 'Ed25519' | 'ES256'; platform?: 'android'; hardware: { serial: string; model: string; os: string } }): Promise<EnrollResponse>;
+  enroll(body: { token: string; devicePublicKey: string; keyAlg?: 'Ed25519' | 'ES256'; platform?: 'android' | 'windows' | 'linux' | 'macos'; hardware: { serial: string; model: string; os: string } }): Promise<EnrollResponse>;
   request<T>(method: 'GET' | 'POST', path: string, body: unknown, signer: DeviceSigner): Promise<T>;
 }
 

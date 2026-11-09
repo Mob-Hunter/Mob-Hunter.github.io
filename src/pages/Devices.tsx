@@ -3,6 +3,9 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { Badge, Card, Empty, ErrorBox, Field, fmtAgo, useAction, useCan, useQuery, useRuntime, useToast, errorText } from '../ui/kit';
 import type { DeviceView } from '../core/backend';
 import type { CommandType } from '../core/rbac';
+import type { Platform } from '../core/types';
+import { PLATFORM_ICON, PLATFORM_LABEL } from '../ui/platform';
+import { RiskMeter } from './Threats';
 
 export function stateBadge(d: Pick<DeviceView, 'state' | 'lostMode' | 'policyAckAt'> & { pendingRemoval?: DeviceView['pendingRemoval'] }) {
   if (d.lostMode) return <Badge tone="bad">Lost Mode</Badge>;
@@ -33,6 +36,7 @@ export function DevicesPage() {
   const [tab, setTab] = useState<Tab>(TABS.some((t) => t.id === initial) ? initial : 'all');
   const [q, setQ] = useState('');
   const [group, setGroup] = useState(params.get('group') ?? '');
+  const [platform, setPlatform] = useState<'' | Platform>('');
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [devices, err] = useQuery((api) => api.listDevices({ q }), [q]);
   const canRename = useCan('device.update');
@@ -40,7 +44,8 @@ export function DevicesPage() {
 
   const counts = useMemo(() => Object.fromEntries(TABS.map((t) => [t.id, (devices ?? []).filter(t.match).length])) as Record<Tab, number>, [devices]);
   const groups = useMemo(() => [...new Set((devices ?? []).flatMap((d) => d.tags ?? []))].sort((a, b) => a.localeCompare(b)), [devices]);
-  const shown = (devices ?? []).filter(TABS.find((t) => t.id === tab)!.match).filter((d) => !group || (d.tags ?? []).includes(group));
+  const shown = (devices ?? []).filter(TABS.find((t) => t.id === tab)!.match).filter((d) => !group || (d.tags ?? []).includes(group)).filter((d) => !platform || d.platform === platform);
+  const platforms = useMemo(() => [...new Set((devices ?? []).map((d) => d.platform))], [devices]);
   const selectedDevices = shown.filter((d) => selected.has(d.id));
   const choose = (t: Tab) => {
     setTab(t);
@@ -78,6 +83,16 @@ export function DevicesPage() {
       </div>
       <div className="toolbar">
         <input type="search" placeholder="Search devices…" title="Search by name, serial, model or employee" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search devices" />
+        {platforms.length > 1 && (
+          <select value={platform} onChange={(e) => (setPlatform(e.target.value as Platform | ''), setSelected(new Set()))} aria-label="Filter by platform">
+            <option value="">All platforms</option>
+            {platforms.map((p) => (
+              <option key={p} value={p}>
+                {PLATFORM_LABEL[p]}
+              </option>
+            ))}
+          </select>
+        )}
         {groups.length > 0 && (
           <select value={group} onChange={(e) => chooseGroup(e.target.value)} aria-label="Filter by group">
             <option value="">All groups</option>
@@ -109,9 +124,14 @@ export function DevicesPage() {
               <li key={d.id} className={`${!d.label ? 'unnamed' : ''} ${selected.has(d.id) ? 'selected' : ''}`}>
                 <input type="checkbox" className="row-check" checked={selected.has(d.id)} onChange={() => toggle(d.id)} aria-label={`Select ${d.displayName}`} />
                 <div className="device-main">
-                  <Link to={`/devices/${d.id}`} className="device-name">
-                    {d.displayName}
-                  </Link>
+                  <span className="device-title">
+                    <span className="plat-glyph" title={PLATFORM_LABEL[d.platform]} aria-hidden>
+                      {PLATFORM_ICON[d.platform]}
+                    </span>
+                    <Link to={`/devices/${d.id}`} className="device-name">
+                      {d.displayName}
+                    </Link>
+                  </span>
                   <span className="muted small">
                     {d.model ?? 'Unknown model'} · {d.serial ?? 'serial pending'} · {d.assignedUser ? d.assignedUser.name : 'unassigned'}
                     {d.assetTag ? ` · ${d.assetTag}` : ''}
@@ -128,7 +148,8 @@ export function DevicesPage() {
                 </div>
                 <div className="device-meta">
                   {stateBadge(d)}
-                  {d.telemetry && <span className="small">🔋 {d.telemetry.batteryLevel}%</span>}
+                  {d.risk.score > 0 && <RiskMeter score={d.risk.score} band={d.risk.band} />}
+                  {d.telemetry && !d.telemetry.noBattery && <span className="small">🔋 {d.telemetry.batteryLevel}%</span>}
                   <span className="muted small">seen {fmtAgo(d.lastCheckinAt)}</span>
                   {!d.label && canRename && !isDecommissioned(d) && <InlineRename id={d.id} />}
                 </div>

@@ -51,6 +51,66 @@ const GUIDES: Guide[] = [
     ),
   },
   {
+    id: 'computers',
+    title: 'Add a Windows, Linux or Mac computer',
+    icon: '⊞',
+    summary: 'One command in an admin terminal installs the desktop agent and enrols the computer.',
+    keywords: 'computer laptop desktop pc windows linux macos mac agent powershell sudo install service',
+    body: (
+      <>
+        <ol className="steps">
+          <li>
+            Open <Link to="/enrol?platform=desktop">Add devices → Computer</Link>, tap <strong>Mint token + QR</strong> and choose Windows, Linux or macOS.
+          </li>
+          <li>
+            Copy the command. On Windows paste it into <em>PowerShell (Admin)</em>; on Linux or macOS into a terminal (it uses <code>sudo</code>).
+          </li>
+          <li>Read the notice to the employee and type “I understand”. A background service starts and the computer appears in Devices within a minute.</li>
+        </ol>
+        <p className="small muted">
+          Computers support lock, message, restart and policy sync, and report security settings for the threat landscape. Locate, Lost Mode, ring, app installs and wipe are
+          phone-only. <code>mob-hunter-agent posture</code> shows exactly what a computer reports; <code>mob-hunter-agent uninstall</code> removes it locally.
+        </p>
+      </>
+    ),
+  },
+  {
+    id: 'threats',
+    title: 'Review and fix security threats',
+    icon: '⚠',
+    summary: 'Threat landscape: risk per device, one-click fixes, time-limited risk acceptance.',
+    keywords: 'threat mtd mobile threat defense risk score root jailbreak malware patch encryption screen lock usb debugging wifi firewall accept',
+    body: (
+      <ol className="steps">
+        <li>
+          Open <Link to="/threats">Threat landscape</Link>. The threat level follows the worst open threat; each device gets a risk score from 0 to 100.
+        </li>
+        <li>
+          Filter by severity, category or platform. Each threat says why it matters and how to fix it. <strong>Send instructions</strong> sends the employee the exact
+          steps; <strong>Lock device</strong> is offered for compromised devices.
+        </li>
+        <li>Threats resolve by themselves at the next check-in once the device is fixed — the timeline shows detections and resolutions.</li>
+        <li>
+          When a risk is known and acceptable (a developer phone with USB debugging), use <strong>Accept risk…</strong> with a reason for 7, 30 or 90 days. It is audited and
+          reopens automatically. Critical threats cannot be accepted.
+        </li>
+      </ol>
+    ),
+  },
+  {
+    id: 'ios',
+    title: 'iPhone and iPad',
+    icon: '▯',
+    summary: 'iOS needs an Apple MDM push certificate first.',
+    keywords: 'ios iphone ipad apple mdm apns abm business manager',
+    body: (
+      <p>
+        Apple manages iOS devices only through its MDM service. Your organisation needs an Apple push (APNs) MDM certificate and, for company iPhones, Apple Business Manager.
+        Until then Mob Hunter does not offer iOS enrolment, because the devices could not receive any command. See <Link to="/enrol">Add devices → iPhone / iPad</Link>.
+      </p>
+    ),
+  },
+  {
     id: 'name-assign',
     title: 'Name and assign a device',
     icon: '✎',
@@ -234,7 +294,7 @@ const FAQ: { q: string; a: ReactNode; keywords: string }[] = [
       <>
         Open the Mob Hunter app on the phone. If it says <em>Enrol this phone</em>, the enrolment did not finish: mint a new QR (they expire after 15 minutes
         and work once) and scan again. If it shows a <em>Last check-in problem</em>, that message says what went wrong. Phones from before agent 1.1 have no app
-        screen — install the latest version from <Link to="/apps">Android apps</Link>.
+        screen — install the latest version from <Link to="/apps">Agents &amp; apps</Link>.
       </>
     ),
   },

@@ -38,7 +38,7 @@ let probe404 = 0;
 let other404 = [];
 page.on('response', (r) => {
   if (r.status() !== 404) return;
-  if (/\/api\/health$|\/downloads\/([\w.-]+\.apk|SHA256SUMS\.txt)$/.test(r.url())) probe404++;
+  if (/\/api\/health$|\/downloads\/([\w.-]+\.apk|SHA256SUMS(-desktop)?\.txt|mob-hunter-agent-[\w.-]+)$/.test(r.url())) probe404++;
   else other404.push(r.url());
 });
 page.on('console', (m) => m.type() === 'error' && !(probe404 > 0 && /status of 404/.test(m.text())) && errors.push(m.text()));
@@ -389,8 +389,47 @@ try {
   assert.equal(await page.locator('.help-item').count(), 1);
   ok('Ctrl+K search opens a device by serial; Help & guides filters by topic');
 
+  // Threat landscape: seeded phone + computers show their threats; one-click remediation and risk acceptance.
+  await go(/Threat landscape/);
+  await page.getByRole('heading', { name: 'Threat landscape', exact: true }).waitFor();
+  await page.getByRole('status', { name: /Fleet threat level (high|critical)/ }).waitFor();
+  for (const t of ['Security patch more than 6 months old', 'USB debugging enabled', 'Connected to an open Wi-Fi network', 'Firewall off', 'Storage not encrypted']) {
+    await page.locator('.threat-list .threat', { hasText: t }).first().waitFor();
+  }
+  await page.getByLabel('Filter by platform').selectOption('windows');
+  const fw = page.locator('.threat-list .threat', { hasText: 'Firewall off' });
+  await fw.waitFor();
+  assert.equal(await page.locator('.threat-list .threat', { hasText: 'Linux' }).count(), 0);
+  await fw.getByRole('button', { name: 'Send instructions' }).click();
+  await page.locator('.toast-ok', { hasText: 'Send instructions: sent' }).waitFor();
+  await page.getByLabel('Filter by platform').selectOption('linux');
+  const upd = page.locator('.threat-list .threat', { hasText: 'OS updates waiting to install' });
+  await upd.getByRole('button', { name: 'Accept risk…' }).click();
+  await upd.getByLabel('Why is this risk acceptable?').fill('Build server patched in the monthly window, CHG-301');
+  await upd.getByRole('button', { name: 'Accept', exact: true }).click();
+  await page.locator('.toast-ok', { hasText: 'Risk accepted' }).waitFor();
+  await page.getByLabel('Show accepted').check();
+  await page.locator('.threat-list .threat.accepted', { hasText: 'CHG-301' }).waitFor();
+  ok('threat landscape: phone + computer threats, filter by platform, one-click remediation, time-limited risk acceptance');
+
+  // A computer enrols with the desktop agent (one command; simulated in demo mode).
+  await page.goto(`${base}#/enrol?platform=desktop`);
+  await page.getByRole('heading', { name: 'Add devices' }).waitFor();
+  await page.getByRole('button', { name: 'Mint token + QR' }).click();
+  await page.getByRole('tab', { name: 'Linux', exact: true }).click();
+  const cmd = await page.getByLabel('Install command').textContent();
+  assert.match(cmd, /sudo mob-hunter-agent enrol 'mobhunter:\/\/enrol\?server=/);
+  await page.getByRole('tab', { name: /Windows 10/ }).click();
+  assert.match(await page.getByLabel('Install command').textContent(), /Invoke-WebRequest .*mob-hunter-agent-windows-\$a\.exe/);
+  await page.getByRole('button', { name: /Simulate this computer enrolling/ }).click();
+  await page.locator('.toast-ok', { hasText: 'Simulated computer enrolled' }).waitFor();
+  await go('Devices');
+  await page.getByLabel('Filter by platform').selectOption('windows');
+  assert.equal(await page.locator('.device-list > li').count(), 2);
+  ok('computer enrolment: per-OS install command with the one-time link; Windows computer enrolled and listed');
+
   // Accessibility: no serious or critical WCAG 2.1 AA violations on the main screens
-  for (const route of ['#/', '#/devices', '#/audit', '#/settings', '#/privacy', '#/download']) {
+  for (const route of ['#/', '#/devices', '#/threats', '#/enrol?platform=desktop', '#/apps', '#/audit', '#/settings', '#/privacy', '#/download']) {
     await page.goto(`${base}${route}`);
     await page.locator('h1').first().waitFor();
     await page.waitForTimeout(300);

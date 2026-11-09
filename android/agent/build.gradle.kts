@@ -11,8 +11,8 @@ android {
         applicationId = "com.mobhunter.agent"
         minSdk = 30
         targetSdk = 35
-        versionCode = 10300
-        versionName = "1.3.0"
+        versionCode = 10400
+        versionName = "1.4.0"
     }
 
     // Release signing: supply the organisation's keystore via MH_KEYSTORE_PATH / MH_KEYSTORE_PASSWORD /

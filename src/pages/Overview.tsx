@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { Badge, Card, Empty, fmtAgo, useMe, useNow, useQuery } from '../ui/kit';
 import { ROLE_LABEL, can, type Role } from '../core/rbac';
 import { DOWNLOADS_URL } from '../config';
+import { PLATFORM_LABEL } from '../ui/platform';
 
 export function OverviewPage() {
   const me = useMe()!;
@@ -12,6 +13,7 @@ export function OverviewPage() {
   const [compliance] = useQuery((api) => api.compliance());
   const [incidents] = useQuery((api) => api.listIncidents());
   const [cmds] = useQuery((api) => api.listCommands());
+  const [threats] = useQuery((api) => api.getThreatLandscape());
   const canAudit = can(me.role, 'audit.read');
   const [audit] = useQuery((api) => api.listAudit(), [], { enabled: canAudit });
   const name = (id: string) => devices?.find((d) => d.id === id)?.displayName ?? id;
@@ -105,6 +107,35 @@ export function OverviewPage() {
           <Bars rows={[['Below 20%', battery[0], 'bad'], ['20–49%', battery[1], 'warn'], ['50–79%', battery[2], 'info'], ['80–100%', battery[3], 'ok']]} total={battery.reduce((a, b) => a + b, 0)} />
         </Panel>
 
+        <Panel title="Security threats" action={<Link to="/threats">Threat landscape →</Link>}>
+          {threats ? (
+            <>
+              <p className={`threat-level-inline level-${threats.band}`}>
+                <strong>{threats.band.toUpperCase()}</strong> · avg risk {threats.score}/100 · {threats.devicesAtRisk} of {threats.devices} at risk
+              </p>
+              <Bars
+                rows={[
+                  ['Critical', threats.counts.critical, 'bad'],
+                  ['High', threats.counts.high, 'bad'],
+                  ['Medium', threats.counts.medium, 'warn'],
+                  ['Low', threats.counts.low, 'info'],
+                ]}
+                total={Math.max(1, threats.counts.critical + threats.counts.high + threats.counts.medium + threats.counts.low)}
+              />
+            </>
+          ) : (
+            <p className="muted small">Loading…</p>
+          )}
+        </Panel>
+        <Panel title="Platforms">
+          <Bars
+            rows={(['android', 'windows', 'linux', 'macos', 'ios'] as const)
+              .map((p) => [PLATFORM_LABEL[p], active.filter((d) => d.platform === p).length, 'info'] as const)
+              .filter((r) => r[1] > 0)}
+            total={active.length}
+          />
+        </Panel>
+
         <Panel title="Needs attention" action={<Link to="/compliance">Compliance →</Link>} className="span-2">
           {attention.length ? (
             <ul className="attn">
@@ -164,7 +195,20 @@ export function OverviewPage() {
             <Empty>Nothing is waiting for a second approver.</Empty>
           )}
         </Panel>
-        <Panel title={canAudit ? 'Live activity (audit log)' : 'Recent commands'} action={canAudit ? <Link to="/audit">Audit log →</Link> : undefined} className="span-3">
+        <Panel title="Agent versions" action={<Link to="/apps">Agents →</Link>}>
+          {(() => {
+            const counts = new Map<string, number>();
+            for (const d of active) {
+              const v = d.telemetry?.security?.agentVersion;
+              const k = `${PLATFORM_LABEL[d.platform]} ${v ?? '(older)'}`;
+              counts.set(k, (counts.get(k) ?? 0) + 1);
+            }
+            const rows = [...counts].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([k, n]) => [k, n, k.endsWith('(older)') ? 'warn' : 'info'] as const);
+            return rows.length ? <Bars rows={rows} total={active.length} /> : <p className="muted small">No agents reporting yet.</p>;
+          })()}
+        </Panel>
+
+        <Panel title={canAudit ? 'Live activity (audit log)' : 'Recent commands'} action={canAudit ? <Link to="/audit">Audit log →</Link> : undefined} className="span-4">
           {feed.length ? (
             <ol className="feed">
               {feed.map((f, k) => (
@@ -193,6 +237,11 @@ const ISSUE_LABEL: Record<string, string> = {
   old_patch: 'Old security patch',
   low_storage: 'Low storage',
   unassigned: 'Not assigned',
+  compromised: 'OS integrity broken',
+  no_screen_lock: 'No screen lock',
+  not_encrypted: 'Not encrypted',
+  firewall_off: 'Firewall off',
+  antivirus_off: 'Malware protection off',
 };
 
 function rank(issues: { severity: string }[]) {
@@ -212,7 +261,7 @@ function toneOf(action: string) {
   return 'ok';
 }
 
-function Kpi({ to, label, value, sub, meter, tone }: { to: string; label: string; value: ReactNode; sub: string; meter?: number; tone?: string }) {
+export function Kpi({ to, label, value, sub, meter, tone }: { to: string; label: string; value: ReactNode; sub: string; meter?: number; tone?: string }) {
   return (
     <Link to={to} className={`kpi${tone ? ` kpi-${tone}` : ''}`}>
       <span className="kpi-label">{label}</span>
@@ -229,7 +278,7 @@ function Kpi({ to, label, value, sub, meter, tone }: { to: string; label: string
   );
 }
 
-function Panel({ title, action, className = '', children }: { title: string; action?: ReactNode; className?: string; children: ReactNode }) {
+export function Panel({ title, action, className = '', children }: { title: string; action?: ReactNode; className?: string; children: ReactNode }) {
   return (
     <section className={`card panel ${className}`} aria-label={title}>
       <header className="panel-head">
@@ -242,7 +291,7 @@ function Panel({ title, action, className = '', children }: { title: string; act
 }
 
 /** Donut chart; the legend next to it carries the same numbers as text. */
-function Ring({ parts, center, caption }: { parts: { v: number; c: string; label: string }[]; center: string; caption: string }) {
+export function Ring({ parts, center, caption }: { parts: { v: number; c: string; label: string }[]; center: string; caption: string }) {
   const total = parts.reduce((a, p) => a + p.v, 0);
   const r = 52;
   const len = 2 * Math.PI * r;
@@ -269,7 +318,7 @@ function Ring({ parts, center, caption }: { parts: { v: number; c: string; label
   );
 }
 
-function LegendRow({ color, label, n }: { color: string; label: string; n: number }) {
+export function LegendRow({ color, label, n }: { color: string; label: string; n: number }) {
   return (
     <li>
       <span className="swatch" style={{ background: color }} aria-hidden />
@@ -279,7 +328,7 @@ function LegendRow({ color, label, n }: { color: string; label: string; n: numbe
   );
 }
 
-function Bars({ rows, total }: { rows: readonly (readonly [string, number, string])[]; total: number }) {
+export function Bars({ rows, total }: { rows: readonly (readonly [string, number, string])[]; total: number }) {
   return (
     <ul className="bars">
       {rows.map(([label, n, tone]) => (

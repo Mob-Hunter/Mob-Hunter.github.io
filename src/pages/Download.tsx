@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Badge, QrImage } from '../ui/kit';
+import { Badge, Card, QrImage, TableWrap } from '../ui/kit';
 import { APK_FILES, DOWNLOADS_URL } from '../config';
 
 /** Absolute base for downloads: the live server when configured, else this origin. */
@@ -9,11 +9,11 @@ export function downloadsBase(): string {
 }
 
 /** SHA-256 per file from SHA256SUMS.txt (published next to the APKs). */
-function useChecksums(base: string) {
+function useChecksums(base: string, file = 'SHA256SUMS.txt') {
   const [sums, setSums] = useState<Record<string, string> | null>(null);
   useEffect(() => {
     let alive = true;
-    fetch(`${base}/SHA256SUMS.txt`, { cache: 'no-store' })
+    fetch(`${base}/${file}`, { cache: 'no-store' })
       .then((r) => (r.ok ? r.text() : ''))
       .then((t) => {
         if (!alive) return;
@@ -28,7 +28,7 @@ function useChecksums(base: string) {
     return () => {
       alive = false;
     };
-  }, [base]);
+  }, [base, file]);
   return sums;
 }
 
@@ -151,13 +151,68 @@ export function DownloadPage() {
 export function AppsPage() {
   return (
     <div className="page">
-      <h1>Android apps</h1>
-      <p className="muted">Scan a code with the phone&apos;s camera to download, or share this page.</p>
+      <h1>Agents &amp; apps</h1>
+      <p className="muted">Android apps for phones and the desktop agent for Windows, Linux and macOS computers.</p>
+      <h2>Android</h2>
       <div className="callout">
         <strong>Enrolling a phone?</strong> You do not need to download anything first: <Link to="/enrol">Add devices</Link> gives you one QR code that installs
         the agent and enrols the phone.
       </div>
       <ApkDownloads />
+      <h2>Computers</h2>
+      <DesktopDownloads />
     </div>
+  );
+}
+
+const DESKTOP_FILES = [
+  { file: 'mob-hunter-agent-windows-amd64.exe', label: 'Windows (x64)' },
+  { file: 'mob-hunter-agent-windows-arm64.exe', label: 'Windows (ARM)' },
+  { file: 'mob-hunter-agent-linux-amd64', label: 'Linux (x86-64)' },
+  { file: 'mob-hunter-agent-linux-arm64', label: 'Linux (ARM64)' },
+  { file: 'mob-hunter-agent-darwin-arm64', label: 'macOS (Apple silicon)' },
+  { file: 'mob-hunter-agent-darwin-amd64', label: 'macOS (Intel)' },
+] as const;
+
+/** The desktop agent binaries with their published SHA-256 (from SHA256SUMS-desktop.txt). */
+function DesktopDownloads() {
+  const base = downloadsBase();
+  const sums = useChecksums(base, 'SHA256SUMS-desktop.txt');
+  return (
+    <Card title="Mob Hunter desktop agent">
+      <p className="small">
+        You normally don&apos;t download it by hand: <Link to="/enrol?platform=desktop">Add devices → Computer</Link> gives a one-line command that downloads, enrols and installs it.
+      </p>
+      {sums && !Object.keys(sums).length ? (
+        <p className="callout small" role="status">
+          The desktop agent is not published at <code className="break">{base}</code> yet. It appears after the next release build.
+        </p>
+      ) : (
+        <TableWrap label="Desktop agent downloads">
+          <table>
+            <thead>
+              <tr>
+                <th>Platform</th>
+                <th>File</th>
+                <th>SHA-256</th>
+              </tr>
+            </thead>
+            <tbody>
+              {DESKTOP_FILES.map((f) => (
+                <tr key={f.file}>
+                  <td>{f.label}</td>
+                  <td>
+                    <a href={`${base}/${f.file}`}>{f.file}</a>
+                  </td>
+                  <td>
+                    <code className="break tiny">{sums?.[f.file] ?? '…'}</code>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </TableWrap>
+      )}
+    </Card>
   );
 }

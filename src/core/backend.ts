@@ -38,6 +38,7 @@ import {
   type CommandType,
   type Role,
 } from './rbac';
+import { detectThreats, riskBand, riskScore, SEVERITIES, THREATS, type RiskBand, type ThreatCategory, type ThreatDef } from './threats';
 import { DeviceRelay, StubPushProvider, withDeviceLock, type PushProvider } from './relay';
 import { base32Encode, verifyTotp } from './totp';
 import type {
@@ -50,6 +51,11 @@ import type {
   Employee,
   EnrollmentToken,
   Incident,
+  Platform,
+  SecurityPosture,
+  ThreatEvent,
+  ThreatSeverity,
+  ThreatState,
   AppCatalogEntry,
   OrgSettings,
   LocationFix,
@@ -144,6 +150,33 @@ export interface DeviceView extends Omit<Device, 'transparencyKey' | 'cert'> {
   queuedCommands: number;
   /** open lost/stolen incident (no coordinates) */
   activeIncident: Pick<Incident, 'id' | 'kind' | 'ticket' | 'startedAt' | 'trackingUntil' | 'trackingIntervalSec'> | null;
+  /** Threat posture: open threats (accepted ones listed but not scored) and the resulting risk score. */
+  risk: { score: number; band: RiskBand; threats: DeviceThreat[] };
+}
+
+export interface DeviceThreat extends ThreatDef {
+  detail: string;
+  firstSeen: number;
+  accepted: { by: string; byName: string; at: number; until: number; reason: string } | null;
+}
+
+export interface ThreatLandscape {
+  generatedAt: number;
+  score: number;
+  band: RiskBand;
+  devices: number;
+  devicesAtRisk: number;
+  counts: Record<ThreatSeverity, number>;
+  accepted: number;
+  resolved7d: number;
+  detected7d: number;
+  byCategory: { category: ThreatCategory; count: number; worst: ThreatSeverity }[];
+  byPlatform: { platform: Platform; devices: number; atRisk: number; threats: number }[];
+  byThreat: { key: string; title: string; severity: ThreatSeverity; category: ThreatCategory; devices: number }[];
+  threats: (DeviceThreat & { deviceId: string; deviceName: string; platform: Platform })[];
+  topDevices: { deviceId: string; deviceName: string; platform: Platform; score: number; band: RiskBand; open: number; worst: ThreatSeverity | null }[];
+  events: (ThreatEvent & { deviceName: string; title: string })[];
+  history: ThreatState['history'];
 }
 
 export interface LocationView {
@@ -465,6 +498,190 @@ export class Backend {
 
   // ------------------------------------------------------------------ admin: devices
 
+  // ------------------------------------------------------------------ threat detection
+
+  private get threatState(): ThreatState {
+    return (this.state.threats ??= { records: {}, events: [], history: [] });
+  }
+
+  /** Re-evaluates one device's threats; records detections and resolutions. Returns true if anything changed. */
+  private syncThreats(d: Device): boolean {
+    const now = this.clock();
+    const ts = this.threatState;
+    const recs = (ts.records[d.id] ??= {});
+    const found = detectThreats(d, now, { commands: this.state.commands, incidents: this.state.incidents ?? [] });
+    let changed = false;
+    const event = (key: string, kind: ThreatEvent['kind']) => {
+      ts.events.push({ at: now, deviceId: d.id, key, kind, severity: THREATS[key].severity });
+      if (ts.events.length > 1000) ts.events.splice(0, ts.events.length - 1000);
+      changed = true;
+    };
+    for (const f of found) {
+      const r = recs[f.key];
+      if (!r || r.resolvedAt !== null) {
+        recs[f.key] = { firstSeen: now, lastSeen: now, resolvedAt: null, detail: f.detail, accepted: null };
+        event(f.key, 'detected');
+      } else {
+        r.lastSeen = now;
+        if (r.detail !== f.detail) (r.detail = f.detail), (changed = true);
+        if (r.accepted && r.accepted.until < now) (r.accepted = null), event(f.key, 'reopened');
+      }
+    }
+    for (const [key, r] of Object.entries(recs)) {
+      if (r.resolvedAt === null && !found.some((f) => f.key === key)) {
+        r.resolvedAt = now;
+        event(key, 'resolved');
+      }
+    }
+    return changed;
+  }
+
+  /** Re-evaluates the whole fleet (time-based rules such as patch age and silence) and stores today's snapshot. */
+  private refreshThreats() {
+    let changed = false;
+    for (const d of this.state.devices) changed = this.syncThreats(d) || changed;
+    const day = new Date(this.clock()).toISOString().slice(0, 10);
+    const live = this.state.devices.filter((d) => !['retired', 'wiped', 'released'].includes(d.state));
+    const counts = { critical: 0, high: 0, medium: 0, low: 0 };
+    let atRisk = 0;
+    let total = 0;
+    for (const d of live) {
+      const r = this.riskOf(d);
+      total += r.score;
+      const open = r.threats.filter((t) => !t.accepted);
+      if (open.length) atRisk++;
+      for (const t of open) counts[t.severity]++;
+    }
+    const snap = { day, ...counts, devicesAtRisk: atRisk, devices: live.length, avgScore: live.length ? Math.round(total / live.length) : 0 };
+    const h = this.threatState.history;
+    const last = h[h.length - 1];
+    if (last?.day === day) {
+      if (JSON.stringify(last) !== JSON.stringify(snap)) (h[h.length - 1] = snap), (changed = true);
+    } else {
+      h.push(snap);
+      if (h.length > 90) h.splice(0, h.length - 90);
+      changed = true;
+    }
+    if (changed) this.persist();
+  }
+
+  private riskOf(d: Device): DeviceView['risk'] {
+    const recs = this.state.threats?.records[d.id] ?? {};
+    const threats: DeviceThreat[] = Object.entries(recs)
+      .filter(([key, r]) => r.resolvedAt === null && THREATS[key])
+      .map(([key, r]) => ({
+        ...THREATS[key],
+        detail: r.detail,
+        firstSeen: r.firstSeen,
+        accepted: r.accepted ? { ...r.accepted, byName: this.state.users.find((u) => u.id === r.accepted!.by)?.name ?? 'Unknown' } : null,
+      }))
+      .sort((a, b) => SEVERITIES.indexOf(a.severity) - SEVERITIES.indexOf(b.severity));
+    const score = riskScore(threats.filter((t) => !t.accepted).map((t) => t.severity));
+    return { score, band: riskBand(score), threats };
+  }
+
+  /** GET /admin/threats — the fleet's threat landscape. */
+  getThreatLandscape(sessionId: string): ThreatLandscape {
+    const { user } = this.requireSession(sessionId);
+    this.guard(user, 'threat.read');
+    this.refreshThreats();
+    const now = this.clock();
+    const live = this.state.devices.filter((d) => !['retired', 'wiped', 'released'].includes(d.state));
+    const name = (id: string) => {
+      const d = this.state.devices.find((x) => x.id === id);
+      return d ? displayName(d) : 'Deleted device';
+    };
+    const threats: ThreatLandscape['threats'] = [];
+    const topDevices: ThreatLandscape['topDevices'] = [];
+    const platforms = new Map<Platform, { devices: number; atRisk: number; threats: number }>();
+    let total = 0;
+    for (const d of live) {
+      const r = this.riskOf(d);
+      const open = r.threats.filter((t) => !t.accepted);
+      total += r.score;
+      for (const t of r.threats) threats.push({ ...t, deviceId: d.id, deviceName: displayName(d), platform: d.platform });
+      topDevices.push({ deviceId: d.id, deviceName: displayName(d), platform: d.platform, score: r.score, band: r.band, open: open.length, worst: open[0]?.severity ?? null });
+      const p = platforms.get(d.platform) ?? { devices: 0, atRisk: 0, threats: 0 };
+      p.devices++;
+      if (open.length) p.atRisk++;
+      p.threats += open.length;
+      platforms.set(d.platform, p);
+    }
+    const open = threats.filter((t) => !t.accepted);
+    const counts = { critical: 0, high: 0, medium: 0, low: 0 } as Record<ThreatSeverity, number>;
+    for (const t of open) counts[t.severity]++;
+    const cats = new Map<ThreatCategory, { count: number; worst: ThreatSeverity }>();
+    const kinds = new Map<string, number>();
+    for (const t of open) {
+      const c = cats.get(t.category);
+      if (!c) cats.set(t.category, { count: 1, worst: t.severity });
+      else {
+        c.count++;
+        if (SEVERITIES.indexOf(t.severity) < SEVERITIES.indexOf(c.worst)) c.worst = t.severity;
+      }
+      kinds.set(t.key, (kinds.get(t.key) ?? 0) + 1);
+    }
+    const week = now - 7 * 86_400_000;
+    const ev = this.threatState.events;
+    const score = live.length ? Math.round(total / live.length) : 0;
+    // The fleet band follows the worst open threat as well as the average, so one compromised phone is never hidden.
+    const worst = SEVERITIES.find((s) => counts[s] > 0);
+    const order: RiskBand[] = ['secure', 'low', 'medium', 'high', 'critical'];
+    const band = order[Math.max(order.indexOf(riskBand(score)), worst ? order.indexOf(worst) : 0)];
+    return {
+      generatedAt: now,
+      score,
+      band,
+      devices: live.length,
+      devicesAtRisk: topDevices.filter((d) => d.open > 0).length,
+      counts,
+      accepted: threats.length - open.length,
+      resolved7d: ev.filter((e) => e.kind === 'resolved' && e.at >= week).length,
+      detected7d: ev.filter((e) => e.kind === 'detected' && e.at >= week).length,
+      byCategory: [...cats].map(([category, v]) => ({ category, ...v })).sort((a, b) => b.count - a.count),
+      byPlatform: [...platforms].map(([platform, v]) => ({ platform, ...v })).sort((a, b) => b.devices - a.devices),
+      byThreat: [...kinds].map(([key, devices]) => ({ key, title: THREATS[key].title, severity: THREATS[key].severity, category: THREATS[key].category, devices })).sort((a, b) => SEVERITIES.indexOf(a.severity) - SEVERITIES.indexOf(b.severity) || b.devices - a.devices),
+      threats: threats.sort((a, b) => SEVERITIES.indexOf(a.severity) - SEVERITIES.indexOf(b.severity) || a.firstSeen - b.firstSeen),
+      topDevices: topDevices.filter((d) => d.score > 0).sort((a, b) => b.score - a.score).slice(0, 10),
+      events: ev.slice(-60).reverse().map((e) => ({ ...e, deviceName: name(e.deviceId), title: THREATS[e.key]?.title ?? e.key })),
+      history: this.threatState.history.slice(-30),
+    };
+  }
+
+  /** POST /admin/devices/{id}/threats/{key}/accept — accept a known risk for a limited time, with a reason. */
+  async acceptThreat(sessionId: string, deviceId: string, key: string, input: { reason: string; days?: number }): Promise<DeviceView> {
+    const { user } = this.requireSession(sessionId);
+    this.guard(user, 'threat.manage');
+    const d = this.findDevice(deviceId);
+    const r = this.state.threats?.records[d.id]?.[key];
+    if (!r || r.resolvedAt !== null) throw new ApiError(404, 'not_found', 'No open threat of that kind on this device');
+    const reason = String(input.reason ?? '').trim();
+    if (reason.length < 5) throw new ApiError(422, 'justification_required', 'Give a reason for accepting this risk');
+    if (THREATS[key].severity === 'critical') throw new ApiError(422, 'not_acceptable', 'Critical threats cannot be accepted — remediate the device instead');
+    const days = Math.min(90, Math.max(1, Math.round(Number(input.days) || 30)));
+    const now = this.clock();
+    r.accepted = { by: user.id, at: now, until: now + days * 86_400_000, reason: reason.slice(0, 300) };
+    this.threatState.events.push({ at: now, deviceId: d.id, key, kind: 'accepted', severity: THREATS[key].severity });
+    await this.audit.append({ at: now, actor: user.id, actorRole: user.role, action: 'threat.accepted', target: d.id, detail: { threat: key, days, reason: r.accepted.reason } });
+    this.persist();
+    return this.deviceView(d);
+  }
+
+  /** DELETE /admin/devices/{id}/threats/{key}/accept — withdraw an acceptance. */
+  async reopenThreat(sessionId: string, deviceId: string, key: string): Promise<DeviceView> {
+    const { user } = this.requireSession(sessionId);
+    this.guard(user, 'threat.manage');
+    const d = this.findDevice(deviceId);
+    const r = this.state.threats?.records[d.id]?.[key];
+    if (!r?.accepted) throw new ApiError(404, 'not_found', 'This threat is not accepted');
+    r.accepted = null;
+    const now = this.clock();
+    this.threatState.events.push({ at: now, deviceId: d.id, key, kind: 'reopened', severity: THREATS[key].severity });
+    await this.audit.append({ at: now, actor: user.id, actorRole: user.role, action: 'threat.reopened', target: d.id, detail: { threat: key } });
+    this.persist();
+    return this.deviceView(d);
+  }
+
   private deviceView(d: Device): DeviceView {
     const { transparencyKey: _t, cert, ...rest } = d;
     return {
@@ -474,6 +691,7 @@ export class Backend {
       certNotAfter: cert.notAfter,
       assignedUser: this.state.employees.find((e) => e.id === d.assignedUserId) ?? null,
       queuedCommands: this.state.relayQueues[d.id]?.length ?? 0,
+      risk: this.riskOf(d),
       activeIncident: (() => {
         const i = this.state.incidents!.find((x) => x.deviceId === d.id && x.status === 'active');
         return i ? { id: i.id, kind: i.kind, ticket: i.ticket, startedAt: i.startedAt, trackingUntil: i.trackingUntil, trackingIntervalSec: i.trackingIntervalSec } : null;
@@ -485,6 +703,7 @@ export class Backend {
   listDevices(sessionId: string, filter: { q?: string; unnamedOnly?: boolean } = {}): DeviceView[] {
     const { user } = this.requireSession(sessionId);
     this.guard(user, 'device.read');
+    this.refreshThreats();
     const q = filter.q?.trim().toLowerCase();
     return this.state.devices
       .filter((d) => (filter.unnamedOnly ? !d.label : true))
@@ -498,7 +717,9 @@ export class Backend {
   getDevice(sessionId: string, deviceId: string): DeviceView {
     const { user } = this.requireSession(sessionId);
     this.guard(user, 'device.read');
-    return this.deviceView(this.findDevice(deviceId));
+    const d = this.findDevice(deviceId);
+    if (this.syncThreats(d)) this.persist();
+    return this.deviceView(d);
   }
 
   private findDevice(id: string): Device {
@@ -669,7 +890,8 @@ export class Backend {
   async enroll(input: {
     token: string;
     devicePublicKey: string;
-    platform?: 'android';
+    /** android (default), or a computer running the desktop agent */
+    platform?: 'android' | 'windows' | 'linux' | 'macos';
     /** 'ES256' for Android Keystore P-256 keys (SPKI hex); default Ed25519 (32-byte hex) */
     keyAlg?: 'Ed25519' | 'ES256';
     hardware: { serial: string; model: string; os: string };
@@ -692,6 +914,7 @@ export class Backend {
     if (rec.expiresAt < now) throw new ApiError(410, 'token_expired', 'Enrolment token has expired');
     rec.usedAt = now; // single-use: burnt before anything else can fail
 
+    const platform: Platform = (['windows', 'linux', 'macos'] as const).find((p) => p === input.platform) ?? 'android';
     const deviceId = randomId('dev', 9);
     const cert: DeviceCertificate = {
       ...(es256 ? { alg: 'ES256' as const } : {}),
@@ -706,7 +929,7 @@ export class Backend {
     const certSig = await signEd25519(certJson, this.state.keys.deviceCa.secretKey);
     const device: Device = {
       id: deviceId,
-      platform: 'android',
+      platform,
       label: null,
       assignedUserId: null,
       state: 'enrolled',
@@ -730,7 +953,7 @@ export class Backend {
     rec.deviceId = deviceId;
     this.state.devices.push(device);
     this.state.relayQueues[deviceId] = [];
-    await this.audit.append({ at: now, actor: deviceId, actorRole: 'DEVICE', action: 'device.enrolled', target: deviceId, detail: { enrollment: rec.id, certSerial: cert.serial, mode: device.managementMode } });
+    await this.audit.append({ at: now, actor: deviceId, actorRole: 'DEVICE', action: 'device.enrolled', target: deviceId, detail: { enrollment: rec.id, certSerial: cert.serial, mode: device.managementMode, platform } });
     this.persist();
     return {
       deviceId,
@@ -800,6 +1023,7 @@ export class Backend {
     if (body.os) d.os = String(body.os).slice(0, 64);
     if (body.telemetry) d.telemetry = sanitiseTelemetry(body.telemetry);
     if (body.capabilities && typeof body.capabilities === 'object') d.capabilities = sanitiseCapabilities(body.capabilities);
+    this.syncThreats(d);
     if (body.policyAck && !d.policyAckAt) {
       if (body.policyAck.version !== COLLECTION_NOTICE.version) throw new ApiError(409, 'notice_outdated', 'Acknowledged notice version is not current');
       d.policyAckAt = now;
@@ -855,6 +1079,7 @@ export class Backend {
       cmd.completedAt = now;
       cmd.resultSummary = summary;
       this.relayFor(d.id).complete(cmd.id);
+      if (status === 'rejected') this.syncThreats(d);
       await this.audit.append({ at: now, actor: d.id, actorRole: 'DEVICE', action: `command.${status}`, target: d.id, ticket: cmd.ticket, detail: { commandId: cmd.id, type: cmd.type } });
       if (cmd.type === 'RELEASE') {
         if (status === 'succeeded' && d.pendingRemoval) {
@@ -1964,7 +2189,18 @@ function sanitiseTelemetry(t: Telemetry): Telemetry {
     storageTotalGb: clamp(t.storageTotalGb, 0, 4096, 0),
     integrity,
     patchLevel: String(t.patchLevel ?? '').slice(0, 16),
+    ...(t.noBattery === true ? { noBattery: true } : {}),
+    ...(t.security && typeof t.security === 'object' ? { security: sanitiseSecurity(t.security) } : {}),
   };
+}
+
+function sanitiseSecurity(s: SecurityPosture): SecurityPosture {
+  const out: SecurityPosture = {};
+  const flags = ['compromised', 'devOptions', 'usbDebugging', 'unknownSources', 'screenLock', 'encrypted', 'firewall', 'antivirus', 'secureBoot', 'openWifi'] as const;
+  for (const k of flags) if (typeof s[k] === 'boolean') out[k] = s[k];
+  if (typeof s.pendingUpdates === 'number' && Number.isFinite(s.pendingUpdates)) out.pendingUpdates = Math.min(9999, Math.max(0, Math.round(s.pendingUpdates)));
+  if (typeof s.agentVersion === 'string') out.agentVersion = s.agentVersion.replace(/[^\w.+-]/g, '').slice(0, 24);
+  return out;
 }
 
 function sanitiseParams(type: CommandType, p: Record<string, unknown>, apps: AppCatalogEntry[]): Record<string, unknown> {
@@ -2039,7 +2275,9 @@ export type ComplianceIssue =
   | { code: 'old_patch'; severity: 'warn' | 'bad'; text: string }
   | { code: 'low_storage'; severity: 'warn'; text: string }
   | { code: 'unassigned'; severity: 'warn'; text: string }
-  | { code: 'lost'; severity: 'bad'; text: string };
+  | { code: 'lost'; severity: 'bad'; text: string }
+  | { code: 'compromised' | 'no_screen_lock' | 'not_encrypted' | 'antivirus_off'; severity: 'bad'; text: string }
+  | { code: 'firewall_off'; severity: 'warn'; text: string };
 
 /** Pure compliance rules (unit-tested). */
 export function complianceIssues(d: Device, now: number): ComplianceIssue[] {
@@ -2051,15 +2289,22 @@ export function complianceIssues(d: Device, now: number): ComplianceIssue[] {
   if (!d.label || !d.assignedUserId) out.push({ code: 'unassigned', severity: 'warn', text: 'Not named or not assigned to an employee' });
   const t = d.telemetry;
   if (t) {
-    if (t.batteryLevel < 15) out.push({ code: 'low_battery', severity: 'warn', text: `Battery ${t.batteryLevel}%` });
+    if (!t.noBattery && t.batteryLevel < 15) out.push({ code: 'low_battery', severity: 'warn', text: `Battery ${t.batteryLevel}%` });
+    // Play Integrity exists on Android only; computers report their integrity through the security posture.
     if (t.integrity === 'FAILED') out.push({ code: 'integrity', severity: 'bad', text: 'Play Integrity failed — possible rooted/tampered device' });
-    else if (t.integrity === 'NOT_EVALUATED') out.push({ code: 'integrity', severity: 'warn', text: 'Play Integrity not evaluated' });
+    else if (t.integrity === 'NOT_EVALUATED' && (d.platform ?? 'android') === 'android') out.push({ code: 'integrity', severity: 'warn', text: 'Play Integrity not evaluated' });
     const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(t.patchLevel);
     if (m) {
       const ageDays = Math.floor((now - Date.UTC(+m[1], +m[2] - 1, +m[3])) / 86_400_000);
       if (ageDays > 180) out.push({ code: 'old_patch', severity: 'bad', text: `Security patch ${ageDays} days old` });
       else if (ageDays > 90) out.push({ code: 'old_patch', severity: 'warn', text: `Security patch ${ageDays} days old` });
     }
+    const sec = t.security ?? {};
+    if (sec.compromised) out.push({ code: 'compromised', severity: 'bad', text: 'OS integrity broken (rooted / jailbroken / protection disabled)' });
+    if (sec.screenLock === false) out.push({ code: 'no_screen_lock', severity: 'bad', text: 'No screen lock' });
+    if (sec.encrypted === false) out.push({ code: 'not_encrypted', severity: 'bad', text: 'Storage not encrypted' });
+    if (sec.firewall === false) out.push({ code: 'firewall_off', severity: 'warn', text: 'Firewall off' });
+    if (sec.antivirus === false) out.push({ code: 'antivirus_off', severity: 'bad', text: 'Malware protection off' });
     if (t.storageTotalGb > 0 && t.storageFreeGb / t.storageTotalGb < 0.1) out.push({ code: 'low_storage', severity: 'warn', text: 'Less than 10% storage free' });
   }
   return out;
@@ -2070,8 +2315,17 @@ export { can };
 /** Commands that need the agent to be device owner (factory reset + provisioning QR). */
 const DEVICE_OWNER_ONLY: ReadonlySet<CommandType> = new Set(['WIPE', 'REBOOT', 'INSTALL_APP', 'UNINSTALL_APP']);
 
-/** Why a command cannot run on this phone, or null. Keeps admins from queuing commands that can only fail. */
-export function unsupportedReason(d: Pick<Device, 'managementMode' | 'capabilities'>, type: CommandType): string | null {
+/** What the desktop agent (Windows, Linux, macOS) can run. LOCATE, Lost Mode, ring, apps and wipe are phone-only. */
+const DESKTOP_COMMANDS: ReadonlySet<CommandType> = new Set(['LOCK', 'SYNC_POLICY', 'MESSAGE', 'REBOOT', 'RELEASE']);
+
+/** Why a command cannot run on this device, or null. Keeps admins from queuing commands that can only fail. */
+export function unsupportedReason(d: Pick<Device, 'managementMode' | 'capabilities'> & { platform?: Platform }, type: CommandType): string | null {
+  if (d.platform === 'ios') return 'iOS devices need Apple MDM (an Apple push certificate); no command can be sent to them yet.';
+  if (d.platform === 'windows' || d.platform === 'linux' || d.platform === 'macos') {
+    if (!DESKTOP_COMMANDS.has(type)) return 'Not available on computers: locate, Lost Mode, ring, app installs and wipe are for phones. Lock, message, reboot and policy sync work.';
+    if (type === 'REBOOT' && d.managementMode === 'standard') return 'Reboot needs the agent installed as a system service (administrator / root).';
+    return null;
+  }
   if (d.managementMode !== 'standard') return null;
   if (DEVICE_OWNER_ONLY.has(type)) return 'Not available on a phone enrolled without a factory reset (standard enrolment). Re-enrol it as a company device to wipe, reboot or install apps.';
   if (type === 'LOCK' && !d.capabilities?.deviceAdmin) return 'Remote lock is off on this phone: the user has not allowed it in the Mob Hunter app.';

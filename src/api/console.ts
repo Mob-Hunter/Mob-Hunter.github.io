@@ -6,7 +6,7 @@
  *    an HttpOnly session cookie + CSRF header.
  * Every authorisation decision is made by the backend in both cases.
  */
-import type { Backend, ComplianceIssue, DeviceView, LocationView, Notice } from '../core/backend';
+import type { Backend, ComplianceIssue, DeviceView, LocationView, Notice, ThreatLandscape } from '../core/backend';
 import { ApiError } from '../core/backend';
 import type { AuditRow, ChainVerification } from '../core/audit';
 import type { CommandType, Role } from '../core/rbac';
@@ -23,6 +23,7 @@ export type DevicePatch = Parameters<Backend['updateDevice']>[2];
 export type BulkResult = Awaited<ReturnType<Backend['issueBulkCommand']>>;
 export type LocationTicket = ReturnType<Backend['listLocationTickets']>[number];
 export type DeleteResult = Awaited<ReturnType<Backend['deleteDevice']>>;
+export type { ThreatLandscape };
 export type IncidentSummary = ReturnType<Backend['listIncidents']>[number];
 export type IncidentTrack = Awaited<ReturnType<Backend['trackIncident']>>;
 export type ReportIncidentInput = Parameters<Backend['reportIncident']>[2];
@@ -54,6 +55,9 @@ export interface ConsoleApi {
   // lost / stolen incidents
   reportIncident(deviceId: string, input: ReportIncidentInput): Promise<IncidentRecord>;
   listIncidents(): Promise<IncidentSummary[]>;
+  getThreatLandscape(): Promise<ThreatLandscape>;
+  acceptThreat(deviceId: string, key: string, input: { reason: string; days?: number }): Promise<DeviceView>;
+  reopenThreat(deviceId: string, key: string): Promise<DeviceView>;
   trackIncident(id: string): Promise<IncidentTrack>;
   updateIncidentTracking(id: string, input: { extendHours?: number; intervalSec?: number; reason: string }): Promise<IncidentRecord>;
   resolveIncident(id: string, input: { resolution: IncidentRecord['resolution']; note?: string }): Promise<IncidentRecord>;
@@ -163,6 +167,15 @@ export class LocalConsoleApi implements ConsoleApi {
   }
   reportIncident(deviceId: string, input: ReportIncidentInput) {
     return this.b.reportIncident(this.s, deviceId, input);
+  }
+  async getThreatLandscape() {
+    return this.b.getThreatLandscape(this.s);
+  }
+  acceptThreat(deviceId: string, key: string, input: { reason: string; days?: number }) {
+    return this.b.acceptThreat(this.s, deviceId, key, input);
+  }
+  reopenThreat(deviceId: string, key: string) {
+    return this.b.reopenThreat(this.s, deviceId, key);
   }
   async listIncidents() {
     return this.b.listIncidents(this.s);
@@ -357,6 +370,15 @@ export class RemoteConsoleApi implements ConsoleApi {
   }
   reportIncident(deviceId: string, input: ReportIncidentInput) {
     return this.req<IncidentRecord>('POST', `/admin/devices/${encodeURIComponent(deviceId)}/incidents`, input);
+  }
+  getThreatLandscape() {
+    return this.req<ThreatLandscape>('GET', '/admin/threats');
+  }
+  acceptThreat(deviceId: string, key: string, input: { reason: string; days?: number }) {
+    return this.req<DeviceView>('POST', `/admin/devices/${encodeURIComponent(deviceId)}/threats/${encodeURIComponent(key)}/accept`, input);
+  }
+  reopenThreat(deviceId: string, key: string) {
+    return this.req<DeviceView>('DELETE', `/admin/devices/${encodeURIComponent(deviceId)}/threats/${encodeURIComponent(key)}/accept`);
   }
   listIncidents() {
     return this.req<IncidentSummary[]>('GET', '/admin/incidents');

@@ -48,6 +48,13 @@ Both modes run the same backend code (`src/core/backend.ts`), so every rule is t
 - Bulk actions: tag devices into groups, filter by group, and send MESSAGE, RING, LOCK, SYNC_POLICY or INSTALL/UNINSTALL_APP to up to 500 phones in one request. Each phone is still checked and audited individually. Ticketed and four-eyes commands (LOCATE, Lost Mode, WIPE) are never sent in bulk.
 - Restrictions per device: disable camera, block screenshots and screen recording, disable Bluetooth, block extra user profiles, and lock Wi-Fi settings. Each one is enforced by the agent through DevicePolicyManager on company phones.
 - Inventory: groups, asset tag and admin notes on every device, all searchable.
+- **Threat landscape (mobile threat defense):** every check-in is evaluated against threat rules. They cover rooted or tampered devices, failed integrity checks, security patches older than 90 or 180 days, missing screen lock, unencrypted storage, USB debugging or developer options, unknown app sources, firewall or malware protection off, open Wi-Fi, Secure Boot off, silent devices, and commands rejected as tampered.
+  - Each device gets a 0–100 risk score. The fleet gets a threat level, a 30-day trend, and a detection and resolution timeline.
+  - One-click fixes are available: send the user instructions, or lock the device.
+  - A risk can be accepted with a reason for a limited time. Acceptances are audited, and critical threats can never be accepted.
+  - Only on/off security settings are read, never content. The employee notice lists them.
+- **Windows, Linux and macOS:** the Go desktop agent (`agents/desktop`) enrols with one command. It uses the same signed protocol and reports security posture. It supports message, lock, reboot, policy sync and self-removal.
+- **iOS:** needs an Apple MDM push certificate (APNs) and Apple Business Manager, so iOS enrolment is not offered until those exist. The enrolment page and Help explain the requirements.
 - Compliance view: stale check-ins, patch age, Play Integrity, battery, storage, acknowledgement and assignment. Inventory exports to CSV, with spreadsheet formula injection neutralised.
 - Employees: add, import from HR CSV, leaver offboarding, and DSAR export (Security only, ticketed and audited).
 - Users and access: invite users with an authenticator QR, disable accounts, reset MFA, and list or revoke sessions.

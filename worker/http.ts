@@ -187,6 +187,9 @@ export function createApp(cfg: HttpConfig) {
   });
   app.post('/admin/devices/:id/incidents', async (c) => c.json(await c.var.backend.reportIncident(c.var.sid, c.req.param('id'), await body(c)), 201));
   app.get('/admin/incidents', (c) => c.json(c.var.backend.listIncidents(c.var.sid)));
+  app.get('/admin/threats', (c) => c.json(c.var.backend.getThreatLandscape(c.var.sid)));
+  app.post('/admin/devices/:id/threats/:key/accept', async (c) => c.json(await c.var.backend.acceptThreat(c.var.sid, c.req.param('id'), c.req.param('key'), await body(c))));
+  app.delete('/admin/devices/:id/threats/:key/accept', async (c) => c.json(await c.var.backend.reopenThreat(c.var.sid, c.req.param('id'), c.req.param('key'))));
   app.get('/admin/incidents/:id/track', async (c) => c.json(await c.var.backend.trackIncident(c.var.sid, c.req.param('id'))));
   app.post('/admin/incidents/:id/tracking', async (c) => c.json(await c.var.backend.updateIncidentTracking(c.var.sid, c.req.param('id'), await body(c))));
   app.post('/admin/incidents/:id/resolve', async (c) => c.json(await c.var.backend.resolveIncident(c.var.sid, c.req.param('id'), await body(c))));
