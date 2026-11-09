@@ -73,7 +73,7 @@ export function Landing() {
 
         <section id="how" className="lp-section" aria-labelledby="how-h">
           <div className="lp-wrap">
-            <SectionHead id="how-h" kicker="How it works" title="From box to managed phone in three steps" />
+            <SectionHead id="how-h" kicker="How it works" title="From box to managed phone in three steps" lead="No cables, no MDM vendor account. A factory-reset Android phone and one QR code are all it takes." />
             <ol className="lp-steps">
               <Step n={1} title="Create an enrolment QR">
                 In the console, open <em>Add devices</em> and mint a one-time QR. It is valid for 15 minutes and works once.
@@ -90,7 +90,7 @@ export function Landing() {
 
         <section id="features" className="lp-section lp-alt" aria-labelledby="features-h">
           <div className="lp-wrap">
-            <SectionHead id="features-h" kicker="Features" title="Everything IT needs. Nothing it shouldn't have." />
+            <SectionHead id="features-h" kicker="Features" title="Everything IT needs. Nothing it shouldn't have." lead="Device health, policy, lost-device tracking and safe remote actions — with no remote screen, no shell and no access to personal content." />
             <div className="lp-features">
               <Feature icon="▤" title="Fleet at a glance">
                 Battery, storage, OS patch level, integrity and last check-in for every phone, with compliance alerts and CSV export.
@@ -116,7 +116,7 @@ export function Landing() {
 
         <section id="privacy" className="lp-section" aria-labelledby="privacy-h">
           <div className="lp-wrap">
-            <SectionHead id="privacy-h" kicker="Privacy by design" title="Transparent to employees, by default" />
+            <SectionHead id="privacy-h" kicker="Privacy by design" title="Transparent to employees, by default" lead="Employees read exactly this list before anything is collected, and their phone tells them every time a location is requested." />
             <div className="lp-privacy">
               <div className="lp-list-card">
                 <h3>What the phone shares</h3>
@@ -136,7 +136,7 @@ export function Landing() {
                 <p className="small muted">{COLLECTION_NOTICE.retention}</p>
               </div>
             </div>
-            <p className="center">
+            <p className="lp-more">
               <a href={`${target}#/privacy`}>Read the full privacy notice &amp; governance review →</a>
             </p>
           </div>
@@ -144,7 +144,7 @@ export function Landing() {
 
         <section className="lp-section lp-alt" aria-labelledby="roles-h">
           <div className="lp-wrap">
-            <SectionHead id="roles-h" kicker="Access control" title="The right access for each person" />
+            <SectionHead id="roles-h" kicker="Access control" title="The right access for each person" lead="Multi-factor sign-in for everyone. Permissions are enforced on the server on every request, and every action lands in the audit log." />
             <div className="lp-roles">
               <Role name="Super Admin">Runs the organisation: users, roles, settings, and every action.</Role>
               <Role name="Device Admin">Enrols, names and assigns phones; sets policy; requests wipes.</Role>
@@ -153,14 +153,12 @@ export function Landing() {
               <Role name="Security">Reviews the audit log, approves wipes, purges data, handles access requests.</Role>
               <Role name="Auditor">Read-only access to the fleet and the tamper-evident audit log.</Role>
             </div>
-            <p className="small muted center">Multi-factor sign-in for everyone. Permissions are enforced on the server on every request.</p>
           </div>
         </section>
 
         <section id="apps" className="lp-section" aria-labelledby="apps-h">
           <div className="lp-wrap">
-            <SectionHead id="apps-h" kicker="Android apps" title="Scan to download" />
-            <p className="lp-sub center">Point the phone&apos;s camera at a code, or tap Download on the phone itself. Each file shows its SHA-256 so IT can verify it.</p>
+            <SectionHead id="apps-h" kicker="Android apps" title="Scan to download" lead="Point the phone's camera at a code, or tap Download on the phone itself. Every file can be checked against its published SHA-256." />
             <ApkDownloads />
           </div>
         </section>
@@ -176,7 +174,7 @@ export function Landing() {
               <p className="tiny muted break">{target}</p>
             </div>
             <div className="lp-final-qr">
-              <QrImage text={target} label="QR code to open the Mob Hunter console" />
+              <QrImage size="lg" text={target} label="QR code to open the Mob Hunter console" />
             </div>
           </div>
         </section>
@@ -215,13 +213,16 @@ function JumpLink({ to, children, className }: { to: string; children: ReactNode
   );
 }
 
-function SectionHead({ id, kicker, title }: { id: string; kicker: string; title: string }) {
+function SectionHead({ id, kicker, title, lead }: { id: string; kicker: string; title: string; lead: string }) {
   return (
     <div className="lp-head">
-      <p className="lp-eyebrow">{kicker}</p>
-      <h2 id={id} tabIndex={-1}>
-        {title}
-      </h2>
+      <div>
+        <p className="lp-eyebrow">{kicker}</p>
+        <h2 id={id} tabIndex={-1}>
+          {title}
+        </h2>
+      </div>
+      <p className="lp-head-lead">{lead}</p>
     </div>
   );
 }
@@ -275,6 +276,15 @@ function PhoneIllustration() {
         <div className="lp-notif">
           <strong>This device is managed by your organisation</strong>
           <span>IT can see device health and, when needed, its location.</span>
+        </div>
+        <div className="lp-track">
+          <svg viewBox="0 0 220 96" role="presentation">
+            <path className="lp-grid" d="M0 24H220M0 48H220M0 72H220M44 0V96M88 0V96M132 0V96M176 0V96" />
+            <path className="lp-route" d="M18 78 C 52 70, 60 40, 96 44 S 150 22, 176 30" />
+            <circle className="lp-acc" cx="176" cy="30" r="14" />
+            <circle className="lp-pin" cx="176" cy="30" r="5" />
+          </svg>
+          <span>Lost Mode · tracked every 2 min · ends 18:00</span>
         </div>
         <div className="lp-phone-stats">
           <div>

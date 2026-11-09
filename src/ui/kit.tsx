@@ -212,16 +212,32 @@ export function useNow(intervalMs = 1000): number {
   return now;
 }
 
-export function QrImage({ text, label }: { text: string; label: string }) {
+const QR_PX = { sm: 152, md: 196, lg: 236, xl: 320 } as const;
+
+/**
+ * QR code drawn as SVG: crisp at any size and zoom, always black on white with
+ * the 4-module quiet zone scanners need (also in dark mode).
+ */
+export function QrImage({ text, label, size = 'md' }: { text: string; label: string; size?: keyof typeof QR_PX }) {
   const [src, setSrc] = useState<string | null>(null);
   useEffect(() => {
     let live = true;
-    QRCode.toDataURL(text, { errorCorrectionLevel: 'M', margin: 1, width: 320 }).then((d) => live && setSrc(d), () => live && setSrc(null));
+    QRCode.toString(text, { type: 'svg', errorCorrectionLevel: 'M', margin: 4, color: { dark: '#0b1220', light: '#ffffff' } }).then(
+      (svg) => live && setSrc(`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`),
+      () => live && setSrc(null),
+    );
     return () => {
       live = false;
     };
   }, [text]);
-  return src ? <img className="qr" src={src} alt={label} width={260} height={260} /> : <div className="qr qr-loading">Generating QR…</div>;
+  const px = QR_PX[size];
+  return src ? (
+    <img className={`qr qr-${size}`} src={src} alt={label} width={px} height={px} />
+  ) : (
+    <div className={`qr qr-${size} qr-loading`} role="status">
+      Generating QR…
+    </div>
+  );
 }
 
 export type MapPoint = {

@@ -115,7 +115,7 @@ export function MfaEnrolCard({
     <Card title={title}>
       <div className="enrol-grid">
         <div className="qr-box">
-          <QrImage text={uri} label="Authenticator enrolment QR code" />
+          <QrImage size="lg" text={uri} label="Authenticator enrolment QR code" />
         </div>
         <div className="stack">
           <p>Scan this with an authenticator app (Microsoft Authenticator, Google Authenticator, 1Password…). It is shown only once.</p>
