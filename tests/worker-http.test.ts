@@ -243,6 +243,25 @@ describe('Worker HTTP API', () => {
     expect(c.json.params).toMatchObject({ url: 'https://cdn.corp.test/time.apk', sha256: 'a'.repeat(64) });
   });
 
+  it('bulk commands, groups and restrictions over HTTP', async () => {
+    const ctx = await bootstrapped();
+    const e = await ctx.admin('POST', '/admin/enrollments', {}, 'sa');
+    const fetcher = ((url: string, init?: RequestInit) => ctx.app.request(new URL(url).pathname, init)) as unknown as typeof fetch;
+    const agent = new SimulatedAgent(newAgentFromProvisioning(e.json.provisioning), new HttpDeviceTransport('https://fleet.test', fetcher));
+    await agent.enroll();
+    agent.acknowledge();
+    await agent.checkin();
+    const id = agent.state.deviceId!;
+    const p = await ctx.admin('PATCH', `/admin/devices/${id}`, { tags: ['Sales'], assetTag: 'MH-1' }, 'sa');
+    expect(p.json).toMatchObject({ tags: ['Sales'], assetTag: 'MH-1' });
+    const b = await ctx.admin('POST', '/admin/commands/bulk', { deviceIds: [id, 'dev_nope'], type: 'MESSAGE', params: { text: 'Hello team' } }, 'sa');
+    expect(b.status).toBe(200);
+    expect(b.json.results).toEqual([expect.objectContaining({ deviceId: id, ok: true }), expect.objectContaining({ deviceId: 'dev_nope', ok: false })]);
+    expect((await ctx.admin('POST', '/admin/commands/bulk', { deviceIds: [id], type: 'WIPE' }, 'sa')).status).toBe(422);
+    await agent.poll();
+    expect(agent.state.notifications.some((n) => n.text === 'Hello team')).toBe(true);
+  });
+
   it('retired devices lose API access', async () => {
     const ctx = await bootstrapped();
     const e = await ctx.admin('POST', '/admin/enrollments', {}, 'sa');

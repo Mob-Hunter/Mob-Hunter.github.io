@@ -33,7 +33,7 @@ class CommandExecutor(private val ctx: Context, private val config: Config, priv
             // A phone enrolled without a factory reset is not device owner: never wipe, reboot or
             // install silently there. The server refuses these too; this is the phone's own guard.
             val owner = PolicyEnforcer.isDeviceOwner(ctx)
-            if (!owner && type in setOf("WIPE", "REBOOT", "INSTALL_APP")) {
+            if (!owner && type in setOf("WIPE", "REBOOT", "INSTALL_APP", "UNINSTALL_APP")) {
                 result(id, "rejected", "Not available on a phone enrolled without a factory reset")
                 return
             }
@@ -91,6 +91,24 @@ class CommandExecutor(private val ctx: Context, private val config: Config, priv
                 "INSTALL_APP" -> {
                     val r = AppInstaller.install(ctx, params.getString("packageName"), params.getString("url"), params.getString("sha256"))
                     result(id, if (r.isEmpty()) "succeeded" else "failed", r.ifEmpty { "Install session committed for ${params.getString("packageName")}" })
+                }
+                "UNINSTALL_APP" -> {
+                    val pkg = params.getString("packageName")
+                    when (val r = AppRemover.uninstall(ctx, pkg)) {
+                        "" -> result(id, "succeeded", "Uninstall requested for $pkg")
+                        "NOT_INSTALLED" -> result(id, "succeeded", "$pkg was not installed")
+                        else -> result(id, "failed", r)
+                    }
+                }
+                "MESSAGE" -> {
+                    // A visible message to the user: text only, it reads nothing back from the phone.
+                    Notifier.post(ctx, Notifier.CH_MESSAGE, params.optString("title", "Message from your IT team").ifBlank { "Message from your IT team" }, params.optString("text"))
+                    result(id, "succeeded", "Message shown")
+                }
+                "RING" -> {
+                    Notifier.post(ctx, Notifier.CH_MESSAGE, "Your IT team is ringing this phone", "This sound helps find a misplaced phone. It stops after 30 seconds.")
+                    android.os.Handler(android.os.Looper.getMainLooper()).post { Ringer.ring(ctx) }
+                    result(id, "succeeded", "Rang for 30 s at alarm volume")
                 }
                 "REBOOT" -> {
                     result(id, "succeeded", "Rebooting")

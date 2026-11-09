@@ -51,6 +51,47 @@ object AppInstaller {
     }
 }
 
+/** Silent removal of a catalogue app (device owner). Never the agent itself — that is RELEASE. */
+object AppRemover {
+    fun uninstall(ctx: Context, packageName: String): String {
+        if (packageName == ctx.packageName) return "Use Delete device to remove Mob Hunter"
+        return try {
+            ctx.packageManager.getPackageInfo(packageName, 0)
+            val pi = PendingIntent.getBroadcast(ctx, packageName.hashCode(), Intent(ctx, InstallResultReceiver::class.java), PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+            ctx.packageManager.packageInstaller.uninstall(packageName, pi.intentSender)
+            ""
+        } catch (e: android.content.pm.PackageManager.NameNotFoundException) {
+            "NOT_INSTALLED"
+        } catch (e: Exception) {
+            e.message ?: "uninstall failed"
+        }
+    }
+}
+
+/** Rings the phone at alarm volume for 30 s so a misplaced phone can be found. Always paired with a notification. */
+object Ringer {
+    private var current: android.media.Ringtone? = null
+
+    fun ring(ctx: Context, seconds: Long = 30) {
+        stop()
+        val uri = android.media.RingtoneManager.getActualDefaultRingtoneUri(ctx, android.media.RingtoneManager.TYPE_ALARM)
+            ?: android.media.RingtoneManager.getDefaultUri(android.media.RingtoneManager.TYPE_RINGTONE)
+        val tone = android.media.RingtoneManager.getRingtone(ctx, uri) ?: return
+        tone.audioAttributes = android.media.AudioAttributes.Builder()
+            .setUsage(android.media.AudioAttributes.USAGE_ALARM)
+            .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
+            .build()
+        current = tone
+        tone.play()
+        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({ stop() }, seconds * 1000)
+    }
+
+    fun stop() {
+        runCatching { current?.stop() }
+        current = null
+    }
+}
+
 class InstallResultReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)

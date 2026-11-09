@@ -19,6 +19,8 @@ export type Transparency = Awaited<ReturnType<Backend['transparency']>>;
 export type InstallPageData = Awaited<ReturnType<Backend['installPage']>>;
 export type Enrollment = Awaited<ReturnType<Backend['createEnrollment']>>;
 export type PolicyPatch = Parameters<Backend['updatePolicy']>[2];
+export type DevicePatch = Parameters<Backend['updateDevice']>[2];
+export type BulkResult = Awaited<ReturnType<Backend['issueBulkCommand']>>;
 export type LocationTicket = ReturnType<Backend['listLocationTickets']>[number];
 export type DeleteResult = Awaited<ReturnType<Backend['deleteDevice']>>;
 export type IncidentSummary = ReturnType<Backend['listIncidents']>[number];
@@ -44,7 +46,7 @@ export interface ConsoleApi {
   stats(): Promise<Stats>;
   listDevices(filter?: { q?: string; unnamedOnly?: boolean }): Promise<DeviceView[]>;
   getDevice(id: string): Promise<DeviceView>;
-  updateDevice(id: string, patch: { label?: string | null; assignedUserId?: string | null }): Promise<DeviceView>;
+  updateDevice(id: string, patch: DevicePatch): Promise<DeviceView>;
   updatePolicy(id: string, patch: PolicyPatch, justification: string): Promise<DeviceView>;
   retireDevice(id: string, reason: string): Promise<DeviceView>;
   deleteDevice(id: string, input: { reason: string; confirm: string }): Promise<DeleteResult>;
@@ -58,6 +60,7 @@ export interface ConsoleApi {
   compliance(): Promise<{ deviceId: string; deviceName: string; issues: ComplianceIssue[] }[]>;
   // commands
   issueCommand(deviceId: string, input: { type: CommandType; ticket?: string; reason?: string; params?: Record<string, unknown> }): Promise<Command>;
+  issueBulkCommand(input: { deviceIds: string[]; type: CommandType; params?: Record<string, unknown> }): Promise<BulkResult>;
   approveCommand(id: string, approve: boolean): Promise<Command>;
   listCommands(deviceId?: string): Promise<Command[]>;
   pushLog(): Promise<PushWake[]>;
@@ -143,7 +146,7 @@ export class LocalConsoleApi implements ConsoleApi {
   async getDevice(id: string) {
     return this.b.getDevice(this.s, id);
   }
-  updateDevice(id: string, patch: { label?: string | null; assignedUserId?: string | null }) {
+  updateDevice(id: string, patch: DevicePatch) {
     return this.b.updateDevice(this.s, id, patch);
   }
   updatePolicy(id: string, patch: PolicyPatch, justification: string) {
@@ -179,7 +182,10 @@ export class LocalConsoleApi implements ConsoleApi {
   async issueCommand(deviceId: string, input: { type: CommandType; ticket?: string; reason?: string; params?: Record<string, unknown> }) {
     const { envelope: _e, ...c } = await this.b.issueCommand(this.s, deviceId, input);
     return c;
+  }  issueBulkCommand(input: { deviceIds: string[]; type: CommandType; params?: Record<string, unknown> }) {
+    return this.b.issueBulkCommand(this.s, input);
   }
+
   async approveCommand(id: string, approve: boolean) {
     const { envelope: _e, ...c } = await this.b.approveCommand(this.s, id, approve);
     return c;
@@ -334,7 +340,7 @@ export class RemoteConsoleApi implements ConsoleApi {
   getDevice(id: string) {
     return this.req<DeviceView>('GET', `/admin/devices/${encodeURIComponent(id)}`);
   }
-  updateDevice(id: string, patch: { label?: string | null; assignedUserId?: string | null }) {
+  updateDevice(id: string, patch: DevicePatch) {
     return this.req<DeviceView>('PATCH', `/admin/devices/${encodeURIComponent(id)}`, patch);
   }
   updatePolicy(id: string, patch: PolicyPatch, justification: string) {
@@ -369,6 +375,9 @@ export class RemoteConsoleApi implements ConsoleApi {
   }
   issueCommand(deviceId: string, input: { type: CommandType; ticket?: string; reason?: string; params?: Record<string, unknown> }) {
     return this.req<Command>('POST', `/admin/devices/${encodeURIComponent(deviceId)}/commands`, input);
+  }
+  issueBulkCommand(input: { deviceIds: string[]; type: CommandType; params?: Record<string, unknown> }) {
+    return this.req<BulkResult>('POST', '/admin/commands/bulk', input);
   }
   approveCommand(id: string, approve: boolean) {
     return this.req<Command>('POST', `/admin/commands/${encodeURIComponent(id)}/approve`, { approve });

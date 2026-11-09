@@ -110,10 +110,10 @@ const GUIDES: Guide[] = [
   },
   {
     id: 'actions',
-    title: 'Lock, sync policy, wipe or install an app',
+    title: 'Lock, message, ring, sync policy, wipe or install an app',
     icon: '⛨',
     summary: 'Signed commands with a 10-minute expiry; wipes need a second person.',
-    keywords: 'lock reboot wipe install app sync policy approve four eyes',
+    keywords: 'lock reboot wipe install uninstall app sync policy message ring approve four eyes',
     body: (
       <ul>
         <li>
@@ -127,6 +127,44 @@ const GUIDES: Guide[] = [
           Apps are installed only from the approved catalogue in <Link to="/settings">Settings</Link>, and the phone checks each file&apos;s SHA-256.
         </li>
       </ul>
+    ),
+  },
+  {
+    id: 'groups-bulk',
+    title: 'Groups and commands to many phones at once',
+    icon: '⧉',
+    summary: 'Tag devices (Sales, Colombo…), filter by group, then message, ring, lock or install on all of them.',
+    keywords: 'group tag bulk mass many all message broadcast ring find lock install uninstall asset tag notes',
+    body: (
+      <ol className="steps">
+        <li>
+          Open a device and fill in <strong>Groups</strong> (comma-separated), and optionally an <strong>Asset tag</strong> and notes. Search finds devices by
+          any of them.
+        </li>
+        <li>
+          In <Link to="/devices">Devices</Link>, choose a group in <em>All groups</em> (or click a group chip), then <strong>Select all</strong>.
+        </li>
+        <li>
+          Use the bar that appears: <strong>Message…</strong> shows your text as a notification, <strong>Ring</strong> plays an alarm for 30 seconds to find a
+          misplaced phone, and <strong>Sync policy</strong>, <strong>Lock</strong>, <strong>Install app…</strong> and <strong>Uninstall app…</strong> work as
+          on a single device.
+        </li>
+        <li>The result says how many phones received it and which were skipped and why. Each phone is checked and audited on its own.</li>
+      </ol>
+    ),
+  },
+  {
+    id: 'restrictions',
+    title: 'Restrictions: camera, screenshots, Bluetooth, Wi-Fi, users',
+    icon: '⊘',
+    summary: 'Switch them on per device with a justification; company phones apply them at the next sync.',
+    keywords: 'restriction policy camera screenshot screen capture bluetooth wifi user profile disable block kiosk',
+    body: (
+      <p>
+        Open the device and use the switches under <em>Restrictions</em> in the policy card, add a justification and tap <strong>Save policy</strong>. The
+        change creates a new policy version, is recorded in the audit log and is pushed to the phone. Restrictions are enforced on company (factory-reset)
+        phones; a phone enrolled without a factory reset shows a note instead.
+      </p>
     ),
   },
   {

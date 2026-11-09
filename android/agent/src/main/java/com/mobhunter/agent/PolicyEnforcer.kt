@@ -29,6 +29,12 @@ object PolicyEnforcer {
         restrict(UserManager.DISALLOW_USB_FILE_TRANSFER, policy.optBoolean("disallowUsbTransfer", true))
         restrict(UserManager.DISALLOW_INSTALL_UNKNOWN_SOURCES_GLOBALLY, policy.optBoolean("disallowUnknownSources", true))
         restrict(UserManager.DISALLOW_DEBUGGING_FEATURES, policy.optBoolean("disallowDebugging", true))
+        // Optional restrictions an administrator switches on per device (all off by default).
+        restrict(UserManager.DISALLOW_BLUETOOTH, policy.optBoolean("bluetoothDisabled", false))
+        restrict(UserManager.DISALLOW_ADD_USER, policy.optBoolean("disallowAddUser", false))
+        restrict(UserManager.DISALLOW_CONFIG_WIFI, policy.optBoolean("disallowConfigWifi", false))
+        runCatching { dpm.setCameraDisabled(admin, policy.optBoolean("cameraDisabled", false)) }.onFailure { problems += "camera: ${it.message}" }
+        runCatching { dpm.setScreenCaptureDisabled(admin, policy.optBoolean("screenCaptureDisabled", false)) }.onFailure { problems += "screenshots: ${it.message}" }
         val keepLocation = policy.optBoolean("keepLocationOn", true)
         restrict(UserManager.DISALLOW_CONFIG_LOCATION, keepLocation)
         if (keepLocation) runCatching { dpm.setLocationEnabled(admin, true) }.onFailure { problems += "location: ${it.message}" }

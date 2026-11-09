@@ -44,7 +44,10 @@ Both modes run the same backend code (`src/core/backend.ts`), so every rule is t
 **Operations**
 
 - Enrolment: 15-minute single-use tokens, the device-owner QR, an install page, and a clearly labelled sideload link. New phones appear as "Unnamed device" and can be renamed or assigned inline.
-- Commands: LOCATE, Lost Mode on and off, LOCK, WIPE (four-eyes), SYNC_POLICY, INSTALL_APP (from the approved catalogue, with SHA-256 checked on the device), and REBOOT.
+- Commands: LOCATE, Lost Mode on and off, LOCK, WIPE (four-eyes), SYNC_POLICY, INSTALL_APP (from the approved catalogue, with SHA-256 checked on the device), UNINSTALL_APP, REBOOT, MESSAGE (a notification with your text) and RING (an alarm for 30 s to find a misplaced phone).
+- Bulk actions: tag devices into groups, filter by group, and send MESSAGE, RING, LOCK, SYNC_POLICY or INSTALL/UNINSTALL_APP to up to 500 phones in one request. Each phone is still checked and audited individually. Ticketed and four-eyes commands (LOCATE, Lost Mode, WIPE) are never sent in bulk.
+- Restrictions per device: disable camera, block screenshots and screen recording, disable Bluetooth, block extra user profiles, and lock Wi-Fi settings. Each one is enforced by the agent through DevicePolicyManager on company phones.
+- Inventory: groups, asset tag and admin notes on every device, all searchable.
 - Compliance view: stale check-ins, patch age, Play Integrity, battery, storage, acknowledgement and assignment. Inventory exports to CSV, with spreadsheet formula injection neutralised.
 - Employees: add, import from HR CSV, leaver offboarding, and DSAR export (Security only, ticketed and audited).
 - Users and access: invite users with an authenticator QR, disable accounts, reset MFA, and list or revoke sessions.

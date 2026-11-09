@@ -1,5 +1,5 @@
-import { unsupportedReason } from '../core/backend';
-import { useState, type FormEvent } from 'react';
+import { RESTRICTION_KEYS, unsupportedReason, type DeviceView } from '../core/backend';
+import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Badge, Card, Empty, ErrorBox, Field, fmtAgo, fmtTime, useAction, useCan, useMe, useQuery, useRuntime, TableWrap } from '../ui/kit';
 import { DeviceLocationPanel } from '../ui/location';
@@ -17,6 +17,9 @@ const COMMAND_HELP: Record<CommandType, string> = {
   INSTALL_APP: 'Silently installs a company app by package name.',
   REBOOT: 'Reboots the device.',
   RELEASE: 'Removes management and uninstalls the agent — sent by “Delete device”.',
+  MESSAGE: 'Shows your message to the employee as a notification on the phone.',
+  RING: 'Plays an alarm at full volume for 30 seconds, even on silent — to find a phone nearby. The employee sees why.',
+  UNINSTALL_APP: 'Removes an app that was installed from the approved catalogue. Personal apps can never be removed.',
 };
 
 export function DeviceDetailPage() {
@@ -142,7 +145,7 @@ export function DeviceDetailPage() {
         </Card>
       </div>
 
-      {canUpdate && <RenameCard id={device.id} label={device.label} assigned={device.assignedUserId} employees={(employees ?? []).filter((e) => e.status !== 'leaver')} />}
+      {canUpdate && <RenameCard key={device.id} device={device} employees={(employees ?? []).filter((e) => e.status !== 'leaver')} />}
 
       <Card title="Commands">
         {allowed.length ? (
@@ -195,7 +198,7 @@ export function DeviceDetailPage() {
       {canReportLost && !device.activeIncident && device.state !== 'wiped' && device.state !== 'retired' && !device.pendingRemoval && (
         <ReportIncidentCard deviceId={device.id} acknowledged={!!device.policyAckAt} />
       )}
-      <PolicyCard deviceId={device.id} policy={device.policy} />
+      <PolicyCard deviceId={device.id} policy={device.policy} standard={device.managementMode === 'standard'} />
       <DeviceLocationPanel deviceId={device.id} commands={commands} lostMode={device.lostMode} />
       {canRetire && device.state !== 'retired' && device.state !== 'wiped' && <RetireCard deviceId={device.id} />}
       {canDelete && (device.pendingRemoval ? <RemovalPendingCard device={device} /> : <DeleteCard deviceId={device.id} name={device.displayName} state={device.state} />)}
@@ -203,36 +206,64 @@ export function DeviceDetailPage() {
   );
 }
 
-function RenameCard({ id, label, assigned, employees }: { id: string; label: string | null; assigned: string | null; employees: { id: string; name: string; department: string }[] }) {
+function RenameCard({ device, employees }: { device: DeviceView; employees: { id: string; name: string; department: string }[] }) {
   const rt = useRuntime();
-  const [name, setName] = useState(label ?? '');
-  const [emp, setEmp] = useState(assigned ?? '');
+  const [name, setName] = useState(device.label ?? '');
+  const [emp, setEmp] = useState(device.assignedUserId ?? '');
+  const [tags, setTags] = useState((device.tags ?? []).join(', '));
+  const [assetTag, setAssetTag] = useState(device.assetTag ?? '');
+  const [notes, setNotes] = useState(device.notes ?? '');
   const { run, busy } = useAction();
   return (
     <Card title="Identify this device">
       <form
-        className="row-form"
+        className="stack"
         onSubmit={(e) => {
           e.preventDefault();
-          void run(() => rt.api.updateDevice(id, { label: name.trim() || null, assignedUserId: emp || null }), 'Saved — recorded in the audit log');
+          void run(
+            () =>
+              rt.api.updateDevice(device.id, {
+                label: name.trim() || null,
+                assignedUserId: emp || null,
+                tags: tags.split(',').map((t) => t.trim()).filter(Boolean),
+                assetTag: assetTag.trim() || null,
+                notes: notes.trim() || null,
+              }),
+            'Saved — recorded in the audit log',
+          );
         }}
       >
-        <Field label="Device name">
-          <input value={name} onChange={(e) => setName(e.target.value)} maxLength={80} placeholder="e.g. Nimal's field phone" />
+        <div className="row-form">
+          <Field label="Device name">
+            <input value={name} onChange={(e) => setName(e.target.value)} maxLength={80} placeholder="e.g. Nimal's field phone" />
+          </Field>
+          <Field label="Assigned employee">
+            <select value={emp} onChange={(e) => setEmp(e.target.value)}>
+              <option value="">— Unassigned —</option>
+              {employees.map((e) => (
+                <option key={e.id} value={e.id}>
+                  {e.name} · {e.department}
+                </option>
+              ))}
+            </select>
+          </Field>
+        </div>
+        <div className="row-form">
+          <Field label="Groups" hint="Comma-separated, e.g. Sales, Colombo. Used to filter and send commands to many phones.">
+            <input value={tags} onChange={(e) => setTags(e.target.value)} maxLength={300} placeholder="Sales, Colombo" />
+          </Field>
+          <Field label="Asset tag">
+            <input value={assetTag} onChange={(e) => setAssetTag(e.target.value)} maxLength={40} placeholder="e.g. MH-000123" />
+          </Field>
+        </div>
+        <Field label="Notes (admins only)">
+          <textarea value={notes} onChange={(e) => setNotes(e.target.value)} maxLength={500} rows={2} placeholder="e.g. Screen protector replaced 2026-10" />
         </Field>
-        <Field label="Assigned employee">
-          <select value={emp} onChange={(e) => setEmp(e.target.value)}>
-            <option value="">— Unassigned —</option>
-            {employees.map((e) => (
-              <option key={e.id} value={e.id}>
-                {e.name} · {e.department}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <button className="btn btn-primary" disabled={busy}>
-          Save
-        </button>
+        <div>
+          <button className="btn btn-primary" disabled={busy}>
+            Save
+          </button>
+        </div>
       </form>
     </Card>
   );
@@ -247,13 +278,22 @@ function CommandForm({ deviceId, allowed, disabled }: { deviceId: string; allowe
   const [phone, setPhone] = useState('+94 11 000 0000');
   const [settings] = useQuery((api) => api.getSettings(), [], { live: false });
   const [pkg, setPkg] = useState('');
+  const [msgTitle, setMsgTitle] = useState('');
+  const [msgText, setMsgText] = useState('');
   const [confirmWipe, setConfirmWipe] = useState('');
   const { run, busy } = useAction();
   const needsTicket = TICKET_REQUIRED.has(type);
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    const params = type === 'LOST_MODE_ON' ? { message, phone } : type === 'INSTALL_APP' ? { packageName: pkg } : {};
+    const params =
+      type === 'LOST_MODE_ON'
+        ? { message, phone }
+        : type === 'INSTALL_APP' || type === 'UNINSTALL_APP'
+          ? { packageName: pkg }
+          : type === 'MESSAGE'
+            ? { title: msgTitle, text: msgText }
+            : {};
     void run(async () => {
       const c = await rt.api.issueCommand(deviceId, { type, ticket: ticket.trim().toUpperCase() || undefined, reason, params });
       setReason('');
@@ -296,7 +336,17 @@ function CommandForm({ deviceId, allowed, disabled }: { deviceId: string; allowe
           </Field>
         </div>
       )}
-      {type === 'INSTALL_APP' && (
+      {type === 'MESSAGE' && (
+        <>
+          <Field label="Title (optional)">
+            <input value={msgTitle} onChange={(e) => setMsgTitle(e.target.value)} maxLength={60} placeholder="Message from your IT team" />
+          </Field>
+          <Field label="Message">
+            <textarea value={msgText} onChange={(e) => setMsgText(e.target.value)} required maxLength={300} rows={3} placeholder="e.g. Please bring this phone to IT on Friday for an update." />
+          </Field>
+        </>
+      )}
+      {(type === 'INSTALL_APP' || type === 'UNINSTALL_APP') && (
         <Field label="App (approved catalogue)" hint={<Link to="/settings">Manage the app catalogue</Link>}>
           <select value={pkg} onChange={(e) => setPkg(e.target.value)} required>
             <option value="">— choose an app —</option>
@@ -337,13 +387,28 @@ function ApproveButtons({ id }: { id: string }) {
   );
 }
 
-function PolicyCard({ deviceId, policy }: { deviceId: string; policy: import('../core/types').DevicePolicy }) {
+const RESTRICTIONS: { key: (typeof RESTRICTION_KEYS)[number]; label: string; hint: string }[] = [
+  { key: 'cameraDisabled', label: 'Disable camera', hint: 'For secure sites and labs.' },
+  { key: 'screenCaptureDisabled', label: 'Block screenshots & screen recording', hint: 'Applies on the phone; the console never sees the screen.' },
+  { key: 'bluetoothDisabled', label: 'Disable Bluetooth', hint: 'Stops pairing and file transfer over Bluetooth.' },
+  { key: 'disallowAddUser', label: 'Block extra user profiles', hint: 'Only the work user on the phone.' },
+  { key: 'disallowConfigWifi', label: 'Lock Wi-Fi settings', hint: 'Employees cannot change Wi-Fi networks.' },
+];
+
+function PolicyCard({ deviceId, policy, standard }: { deviceId: string; policy: import('../core/types').DevicePolicy; standard: boolean }) {
   const rt = useRuntime();
   const canEdit = useCan('device.policy');
   const [justification, setJustification] = useState('');
+  const current = Object.fromEntries(RESTRICTION_KEYS.map((k) => [k, !!policy[k]])) as Record<(typeof RESTRICTION_KEYS)[number], boolean>;
+  const [draft, setDraft] = useState({ ...current, continuousLocation: policy.continuousLocation });
+  useEffect(() => setDraft({ ...current, continuousLocation: policy.continuousLocation }), [policy.version]); // eslint-disable-line react-hooks/exhaustive-deps
+  const changed = (Object.keys(draft) as (keyof typeof draft)[]).filter((k) => draft[k] !== (k === 'continuousLocation' ? policy.continuousLocation : current[k as keyof typeof current]));
   const { run, busy } = useAction();
   return (
     <Card title={`Policy v${policy.version}`}>
+      {standard && (
+        <p className="callout small">This phone was enrolled without a factory reset, so restrictions below cannot be enforced on it. They apply to company (factory-reset) phones.</p>
+      )}
       <ul className="checklist">
         <li className="yes">Factory reset, USB file transfer, unknown sources and debugging blocked</li>
         <li className="yes">
@@ -351,29 +416,51 @@ function PolicyCard({ deviceId, policy }: { deviceId: string; policy: import('..
         </li>
         <li className="yes">Location kept on for the agent; OS location indicator stays visible</li>
         <li className="no">Security logging and network logging — permanently off</li>
-        <li className={policy.continuousLocation ? 'yes' : 'no'}>
-          Tier 3 work-hours location {policy.continuousLocation ? `ON every ${policy.continuousIntervalMin} min, ${policy.workingHours.startHour}:00–${policy.workingHours.endHour}:00 Mon–Fri (${policy.workingHours.timeZone})` : 'OFF'}
-        </li>
       </ul>
-      {canEdit && (
-        <form
-          className="row-form"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void run(async () => {
-              await rt.api.updatePolicy(deviceId, { continuousLocation: !policy.continuousLocation }, justification);
-              setJustification('');
-            }, 'Policy updated; device told to sync');
-          }}
-        >
-          <Field label="Justification (DPIA / programme reference)">
-            <input value={justification} onChange={(e) => setJustification(e.target.value)} required minLength={5} placeholder="e.g. Lone-worker safety, DPIA-12" />
-          </Field>
-          <button className="btn" disabled={busy}>
-            {policy.continuousLocation ? 'Turn Tier 3 off' : 'Turn Tier 3 on'}
-          </button>
-        </form>
-      )}
+      <h3>Restrictions</h3>
+      <form
+        className="stack"
+        onSubmit={(e) => {
+          e.preventDefault();
+          const patch = Object.fromEntries(changed.map((k) => [k, draft[k]]));
+          void run(async () => {
+            await rt.api.updatePolicy(deviceId, patch, justification);
+            setJustification('');
+          }, 'Policy updated; the phone applies it at its next sync');
+        }}
+      >
+        <div className="toggles">
+          {RESTRICTIONS.map((r) => (
+            <label key={r.key} className="toggle">
+              <input type="checkbox" role="switch" checked={draft[r.key]} disabled={!canEdit} onChange={(e) => setDraft({ ...draft, [r.key]: e.target.checked })} />
+              <span>
+                <strong>{r.label}</strong>
+                <small>{r.hint}</small>
+              </span>
+            </label>
+          ))}
+          <label className="toggle">
+            <input type="checkbox" role="switch" checked={draft.continuousLocation} disabled={!canEdit} onChange={(e) => setDraft({ ...draft, continuousLocation: e.target.checked })} />
+            <span>
+              <strong>Work-hours location (Tier 3)</strong>
+              <small>
+                Every {policy.continuousIntervalMin} min, {policy.workingHours.startHour}:00–{policy.workingHours.endHour}:00 Mon–Fri ({policy.workingHours.timeZone}), with a
+                persistent notification. Needs a DPIA.
+              </small>
+            </span>
+          </label>
+        </div>
+        {canEdit && (
+          <div className="row-form">
+            <Field label="Justification (DPIA / ticket / programme)">
+              <input value={justification} onChange={(e) => setJustification(e.target.value)} required minLength={5} placeholder="e.g. Secure-site policy, SEC-12" />
+            </Field>
+            <button className="btn btn-primary" disabled={busy || changed.length === 0}>
+              {changed.length ? `Save policy (${changed.length} change${changed.length > 1 ? 's' : ''})` : 'No changes'}
+            </button>
+          </div>
+        )}
+      </form>
     </Card>
   );
 }

@@ -490,7 +490,7 @@ export class Backend {
       .filter((d) => (filter.unnamedOnly ? !d.label : true))
       .map((d) => this.deviceView(d))
       .filter((d) =>
-        q ? [d.displayName, d.serial, d.model, d.id, d.assignedUser?.name].some((v) => v?.toLowerCase().includes(q)) : true,
+        q ? [d.displayName, d.serial, d.model, d.id, d.assignedUser?.name, d.assetTag, ...(d.tags ?? [])].some((v) => v?.toLowerCase().includes(q)) : true,
       )
       .sort((a, b) => (b.lastCheckinAt ?? b.enrolledAt) - (a.lastCheckinAt ?? a.enrolledAt));
   }
@@ -508,11 +508,11 @@ export class Backend {
   }
 
   /** PATCH /admin/devices/{id} — rename and assign to an employee. */
-  async updateDevice(sessionId: string, deviceId: string, patch: { label?: string | null; assignedUserId?: string | null }): Promise<DeviceView> {
+  async updateDevice(sessionId: string, deviceId: string, patch: { label?: string | null; assignedUserId?: string | null; tags?: string[]; assetTag?: string | null; notes?: string | null }): Promise<DeviceView> {
     const { user } = this.requireSession(sessionId);
     this.guard(user, 'device.update');
     const d = this.findDevice(deviceId);
-    const before = { label: d.label, assignedUserId: d.assignedUserId };
+    const before = { label: d.label, assignedUserId: d.assignedUserId, tags: d.tags ?? [], assetTag: d.assetTag ?? null, notes: d.notes ?? null };
     if (patch.label !== undefined) {
       const label = patch.label === null ? null : String(patch.label).trim();
       if (label !== null && (label.length === 0 || label.length > 80)) throw new ApiError(422, 'invalid_label', 'Name must be 1–80 characters');
@@ -525,19 +525,30 @@ export class Backend {
       }
       d.assignedUserId = patch.assignedUserId;
     }
+    if (patch.tags !== undefined) d.tags = cleanTags(patch.tags);
+    if (patch.assetTag !== undefined) {
+      const t = patch.assetTag === null ? '' : String(patch.assetTag).trim();
+      if (t.length > 40 || /[<>]/.test(t)) throw new ApiError(422, 'invalid_asset_tag', 'Asset tag must be up to 40 characters');
+      d.assetTag = t || null;
+    }
+    if (patch.notes !== undefined) {
+      const n = patch.notes === null ? '' : String(patch.notes).trim();
+      if (n.length > 500) throw new ApiError(422, 'invalid_notes', 'Notes must be up to 500 characters');
+      d.notes = n || null;
+    }
     await this.audit.append({
       at: this.clock(),
       actor: user.id,
       actorRole: user.role,
       action: 'device.updated',
       target: d.id,
-      detail: { before, after: { label: d.label, assignedUserId: d.assignedUserId } },
+      detail: { before, after: { label: d.label, assignedUserId: d.assignedUserId, tags: d.tags ?? [], assetTag: d.assetTag ?? null, notes: d.notes ?? null } },
     });
     this.persist();
     return this.deviceView(d);
   }
 
-  async updatePolicy(sessionId: string, deviceId: string, patch: Partial<Pick<DevicePolicy, 'continuousLocation' | 'continuousIntervalMin' | 'workingHours' | 'passwordMinLength' | 'maxTimeToLockSec'>>, justification: string): Promise<DeviceView> {
+  async updatePolicy(sessionId: string, deviceId: string, patch: PolicyPatch, justification: string): Promise<DeviceView> {
     const { user } = this.requireSession(sessionId);
     this.guard(user, 'device.policy');
     const d = this.findDevice(deviceId);
@@ -555,6 +566,7 @@ export class Backend {
     }
     if (patch.passwordMinLength !== undefined) next.passwordMinLength = Math.max(6, Math.round(patch.passwordMinLength));
     if (patch.maxTimeToLockSec !== undefined) next.maxTimeToLockSec = Math.min(900, Math.max(30, Math.round(patch.maxTimeToLockSec)));
+    for (const k of RESTRICTION_KEYS) if (patch[k] !== undefined) next[k] = !!patch[k];
     // Security / network logging are hard-wired OFF and cannot be enabled via the API.
     next.securityLogging = false;
     next.networkLogging = false;
@@ -942,6 +954,42 @@ export class Backend {
   }
 
   // ------------------------------------------------------------------ admin: commands
+
+  /**
+   * POST /admin/commands/bulk — the same command to many phones. Each phone goes through the
+   * normal single-device path (permission, support check, signing, relay, audit); one failure
+   * does not stop the rest, and every result is reported back.
+   */
+  async issueBulkCommand(
+    sessionId: string,
+    input: { deviceIds: string[]; type: CommandType; params?: Record<string, unknown> },
+  ): Promise<{ results: { deviceId: string; ok: boolean; commandId?: string; error?: string }[] }> {
+    const { user } = this.requireSession(sessionId);
+    if (!isCommandType(input.type) || !BULK_COMMANDS.has(input.type)) throw new ApiError(422, 'not_bulk', 'This command can only be sent to one device at a time');
+    this.guard(user, `command.${input.type}`);
+    const ids = [...new Set(Array.isArray(input.deviceIds) ? input.deviceIds.map(String) : [])];
+    if (!ids.length) throw new ApiError(422, 'no_devices', 'Choose at least one device');
+    if (ids.length > 500) throw new ApiError(422, 'too_many', 'At most 500 devices per bulk command');
+    const results: { deviceId: string; ok: boolean; commandId?: string; error?: string }[] = [];
+    for (const id of ids) {
+      try {
+        const c = await this.issueCommand(sessionId, id, { type: input.type, params: input.params });
+        results.push({ deviceId: id, ok: true, commandId: c.id });
+      } catch (e) {
+        results.push({ deviceId: id, ok: false, error: e instanceof ApiError ? e.message : 'Failed' });
+      }
+    }
+    await this.audit.append({
+      at: this.clock(),
+      actor: user.id,
+      actorRole: user.role,
+      action: 'command.bulk',
+      target: input.type,
+      detail: { devices: ids.length, sent: results.filter((r) => r.ok).length, failed: results.filter((r) => !r.ok).length },
+    });
+    this.persist();
+    return { results };
+  }
 
   /** POST /admin/devices/{id}/commands */
   async issueCommand(sessionId: string, deviceId: string, input: { type: CommandType; ticket?: string; reason?: string; params?: Record<string, unknown> }): Promise<CommandRecord> {
@@ -1944,6 +1992,18 @@ function sanitiseParams(type: CommandType, p: Record<string, unknown>, apps: App
     }
     case 'LOCK':
       return { message: String(p.message ?? '').slice(0, 120) };
+    case 'MESSAGE': {
+      const text = String(p.text ?? '').trim();
+      if (text.length < 1 || text.length > 300) throw new ApiError(422, 'invalid_message', 'Message must be 1–300 characters');
+      return { title: String(p.title ?? '').trim().slice(0, 60) || 'Message from your IT team', text };
+    }
+    case 'UNINSTALL_APP': {
+      const pkg = String(p.packageName ?? '');
+      // Only catalogue apps (the ones the organisation installed) can be removed — never personal apps.
+      const app = apps.find((a) => a.packageName === pkg);
+      if (!app) throw new ApiError(422, 'not_in_catalogue', 'Only apps from the approved catalogue can be uninstalled');
+      return { packageName: app.packageName, name: app.name };
+    }
     default:
       return {};
   }
@@ -2008,7 +2068,7 @@ export function complianceIssues(d: Device, now: number): ComplianceIssue[] {
 export { can };
 
 /** Commands that need the agent to be device owner (factory reset + provisioning QR). */
-const DEVICE_OWNER_ONLY: ReadonlySet<CommandType> = new Set(['WIPE', 'REBOOT', 'INSTALL_APP']);
+const DEVICE_OWNER_ONLY: ReadonlySet<CommandType> = new Set(['WIPE', 'REBOOT', 'INSTALL_APP', 'UNINSTALL_APP']);
 
 /** Why a command cannot run on this phone, or null. Keeps admins from queuing commands that can only fail. */
 export function unsupportedReason(d: Pick<Device, 'managementMode' | 'capabilities'>, type: CommandType): string | null {
@@ -2025,4 +2085,27 @@ function sanitiseCapabilities(c: Partial<DeviceCapabilities>): DeviceCapabilitie
     notifications: c.notifications === true,
     location: c.location === 'background' || c.location === 'foreground' ? c.location : 'none',
   };
+}
+
+export const RESTRICTION_KEYS = ['cameraDisabled', 'screenCaptureDisabled', 'bluetoothDisabled', 'disallowAddUser', 'disallowConfigWifi'] as const;
+
+export type PolicyPatch = Partial<
+  Pick<DevicePolicy, 'continuousLocation' | 'continuousIntervalMin' | 'workingHours' | 'passwordMinLength' | 'maxTimeToLockSec' | (typeof RESTRICTION_KEYS)[number]>
+>;
+
+/** Commands that may be sent to many phones at once. Ticketed / destructive ones stay one-by-one. */
+export const BULK_COMMANDS: ReadonlySet<CommandType> = new Set(['LOCK', 'SYNC_POLICY', 'REBOOT', 'MESSAGE', 'RING', 'INSTALL_APP', 'UNINSTALL_APP']);
+
+/** Tags: up to 10, each 1–30 letters, digits, spaces, - or _; trimmed, de-duplicated (case-insensitive). */
+export function cleanTags(tags: unknown): string[] {
+  if (!Array.isArray(tags)) throw new ApiError(422, 'invalid_tags', 'Tags must be a list');
+  const out: string[] = [];
+  for (const raw of tags) {
+    const t = String(raw).trim().replace(/\s+/g, ' ');
+    if (!t) continue;
+    if (t.length > 30 || !/^[\p{L}\p{N} _-]+$/u.test(t)) throw new ApiError(422, 'invalid_tags', `Invalid tag “${t.slice(0, 30)}”: use letters, digits, spaces, - or _ (max 30)`);
+    if (!out.some((x) => x.toLowerCase() === t.toLowerCase())) out.push(t);
+  }
+  if (out.length > 10) throw new ApiError(422, 'invalid_tags', 'At most 10 tags per device');
+  return out;
 }
