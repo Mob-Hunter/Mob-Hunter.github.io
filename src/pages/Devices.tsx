@@ -114,7 +114,13 @@ export function DevicesPage() {
               ? 'No unnamed devices — every device has been identified.'
               : tab === 'decommissioned'
                 ? 'No retired or wiped devices.'
-                : 'No devices match.'}
+                : tab === 'all' && !q.trim()
+                  ? (
+                      <>
+                        No devices yet. <Link to="/enrol">Add your first phone</Link> — one QR scan, about a minute. <Link to="/help">How enrolment works</Link>
+                      </>
+                    )
+                  : 'No devices match.'}
           </Empty>
         )}
       </Card>

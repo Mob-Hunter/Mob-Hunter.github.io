@@ -87,17 +87,19 @@ try {
   ok('Device Admin signed in with password + TOTP');
   await go(/Add devices/);
   await page.getByRole('button', { name: 'Mint token + QR' }).click();
+  // Default tab: an existing phone — one QR that opens the enrolment page on the phone.
+  const existing = page.getByAltText('Enrolment QR for an existing phone');
+  await existing.waitFor();
+  assert.equal(await existing.evaluate((img) => img.complete && img.naturalWidth > 0), true);
+  const installUrl = await page.getByLabel('Or send this link to the phone').inputValue();
+  assert.match(installUrl, /#\/e\/[A-Za-z0-9_-]{20,}$/);
+  // Company phones: the zero-touch provisioning QR, large enough to scan from a screen.
+  await page.getByRole('tab', { name: /Factory-reset company phone/ }).click();
   await page.getByAltText('Device-owner provisioning QR code').waitFor();
-  // The QR must actually render (a malformed SVG shows only its alt text) and be large enough to scan from a screen.
   const qr = await page.getByAltText('Device-owner provisioning QR code').evaluate((img) => ({ ok: img.complete && img.naturalWidth > 0, w: img.getBoundingClientRect().width }));
   assert.ok(qr.ok, 'provisioning QR image failed to load');
   assert.ok(qr.w >= 300, `provisioning QR too small to scan: ${qr.w}px`);
-  // Personal / test phones get a second QR (mobhunter://enrol link) for enrolment without a factory reset.
-  const personal = page.getByAltText('Enrolment QR for a phone without a factory reset');
-  assert.equal(await personal.evaluate((img) => img.complete && img.naturalWidth > 0), true);
-  const installUrl = await page.getByLabel('Install page (share with the person enrolling)').inputValue();
-  assert.match(installUrl, /#\/e\/[A-Za-z0-9_-]{20,}$/);
-  ok('enrolment minted: QR + install link rendered');
+  ok('enrolment minted: existing-phone QR and company provisioning QR rendered');
   await page.getByRole('button', { name: /Simulate a phone scanning this QR/ }).click();
   await page.locator('.toast-ok', { hasText: 'enrolled' }).waitFor();
   ok('simulated phone enrolled with the one-time token');
@@ -326,6 +328,25 @@ try {
   await page.getByRole('heading', { name: 'Compliance', level: 1 }).waitFor();
   assert.equal(await mainNav.getByRole('link', { name: /Settings/ }).isVisible(), false);
   ok('phone menu opens, closes on Escape and after navigating');
+
+  // Console search: Ctrl+K finds a device by serial and opens it; the Help page filters its guides.
+  await go('Devices');
+  const firstSerial = (await page.locator('.device-list .device-main .small').first().textContent()).split(' · ')[1].trim();
+  await page.keyboard.press('Control+k');
+  const search = page.getByRole('combobox', { name: 'Search the console' });
+  await search.waitFor();
+  await search.fill(firstSerial);
+  await page.getByRole('option').first().waitFor();
+  await page.keyboard.press('Enter');
+  await page.waitForURL(/#\/devices\/dev_/);
+  await page.keyboard.press('Control+k');
+  await search.fill('help');
+  await page.getByRole('option', { name: /Help & guides/ }).click();
+  await page.getByRole('heading', { name: 'Help & guides', level: 1 }).waitFor();
+  await page.getByLabel('Search the guides').fill('stolen');
+  await page.getByText('A phone is lost or stolen').waitFor();
+  assert.equal(await page.locator('.help-item').count(), 1);
+  ok('Ctrl+K search opens a device by serial; Help & guides filters by topic');
 
   // Accessibility: no serious or critical WCAG 2.1 AA violations on the main screens
   for (const route of ['#/', '#/devices', '#/audit', '#/settings', '#/privacy', '#/download']) {

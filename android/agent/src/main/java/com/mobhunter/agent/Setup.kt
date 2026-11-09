@@ -110,10 +110,58 @@ class SetupActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
-        if (config.enrolled && !working) render()
+        if (working) return
+        if (guided) nextStep() else if (config.enrolled) render()
     }
 
     private var working = false
+
+    /** True while walking a freshly enrolled phone through permissions and the notice, one step at a time. */
+    private var guided = false
+    private val asked = mutableSetOf<String>()
+    private var clipboardChecked = false
+
+    /**
+     * Zero-typing enrolment: the console's enrolment page copies the mobhunter:// link to the clipboard
+     * before downloading the app, so the first time the freshly installed app opens it enrols by itself.
+     * Only a Mob Hunter enrolment link is ever acted on, and it is cleared from the clipboard once used.
+     */
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (!hasFocus || clipboardChecked || working || config.enrolled) return
+        clipboardChecked = true
+        val cm = getSystemService(android.content.ClipboardManager::class.java) ?: return
+        val text = runCatching { cm.primaryClip?.getItemAt(0)?.coerceToText(this)?.toString() }.getOrNull()?.trim() ?: return
+        val link = EnrolLink.parse(Uri.parse(text)) ?: return
+        if (Build.VERSION.SDK_INT >= 28) runCatching { cm.clearPrimaryClip() }
+        enrol(link)
+    }
+
+    /** Next missing step of the guided setup; shows the status screen when everything is done. */
+    private fun nextStep() {
+        val owner = PolicyEnforcer.isDeviceOwner(this)
+        val loc = Capabilities.location(this)
+        when {
+            Build.VERSION.SDK_INT >= 33 && !Capabilities.notifications(this) && asked.add("notifications") ->
+                requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), reqNotifications)
+            loc == "none" && asked.add("location") ->
+                requestPermissions(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION), reqLocation)
+            loc == "foreground" && asked.add("background") -> show {
+                title("One more location setting")
+                body("So a lost phone can still be found when the app is closed, Android will open a settings page. Choose \"Allow all the time\".")
+                body("Mob Hunter only reads the location when your organisation asks against a ticket, or in Lost Mode — and you get a notification every time.", 14f, Color.GRAY)
+                action("Continue") { requestPermissions(arrayOf(Manifest.permission.ACCESS_BACKGROUND_LOCATION), reqBackground) }
+                action("Not now") { nextStep() }
+            }
+            config.acknowledgedAt == 0L && asked.add("notice") -> startActivity(Intent(this, NoticeActivity::class.java))
+            else -> {
+                guided = false
+                Sync.now(this)
+                render()
+                if (!owner && config.acknowledgedAt > 0) toastBody("All set — this phone is now enrolled")
+            }
+        }
+    }
 
     private fun handle(intent: Intent?) {
         val link = EnrolLink.parse(intent?.data)
@@ -136,7 +184,9 @@ class SetupActivity : Activity() {
                 working = false
                 if (error == null) {
                     Sync.schedulePeriodic(this)
-                    render()
+                    Sync.now(this)
+                    guided = true
+                    nextStep()
                 } else {
                     config.enrollToken = null
                     showEnrolForm(error.message ?: "Enrolment failed")
@@ -149,7 +199,11 @@ class SetupActivity : Activity() {
     private fun render() {
         if (!config.enrolled) return showEnrolForm(null)
         val owner = PolicyEnforcer.isDeviceOwner(this)
-        if (config.acknowledgedAt == 0L) return showNotice()
+        if (config.acknowledgedAt == 0L) return show {
+            title("Almost done")
+            body("Read what your organisation can and cannot see on this phone, then tap \"I understand\". Nothing is collected before that.")
+            action("Read the notice") { startActivity(Intent(this@SetupActivity, NoticeActivity::class.java)) }
+        }
         show {
             title("This phone is managed")
             body(if (owner) "Company device (fully managed)." else "Standard enrolment — this phone was enrolled without a factory reset. Your organisation sees device health and, only when it asks against a ticket, its location. It cannot wipe this phone, read your data or install apps.")
@@ -185,14 +239,10 @@ class SetupActivity : Activity() {
         }
     }
 
-    private fun showNotice() {
-        startActivity(Intent(this, NoticeActivity::class.java))
-    }
-
     private fun showEnrolForm(error: String?): Unit = show {
         title("Enrol this phone")
-        body("Ask your IT team for an enrolment link, then either:")
-        body("1. Scan the \"Personal or test phone\" QR code in the console's Add devices page with this phone's camera, or\n2. Paste the enrolment link below.")
+        body("Scan the enrolment QR code from your IT team with this phone's camera and tap \"Install Mob Hunter & enrol\" — the phone enrols itself.")
+        body("Or paste the enrolment link you were sent:", 14f, Color.GRAY)
         if (error != null) body(error, 14f, Color.rgb(185, 28, 28))
         val input = EditText(this@SetupActivity).apply {
             hint = "https://…/#/e/… or mobhunter://enrol?…"
@@ -220,7 +270,7 @@ class SetupActivity : Activity() {
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         Sync.now(this) // report the new capabilities straight away
-        render()
+        if (guided) nextStep() else render()
     }
 
     @Deprecated("Activity result API is not used in this dependency-free UI")

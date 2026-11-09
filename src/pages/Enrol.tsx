@@ -16,6 +16,7 @@ export function EnrolPage() {
   const [tokens] = useQuery((api) => api.listEnrollments());
   const [unnamed] = useQuery((api) => api.listDevices({ unnamedOnly: true }));
   const { run, busy } = useAction();
+  const [kind, setKind] = useState<'existing' | 'company'>('existing');
 
   const mint = () =>
     run(async () => {
@@ -36,18 +37,14 @@ export function EnrolPage() {
   return (
     <div className="page">
       <h1>Add devices</h1>
-      <div className="callout">
-        <strong>How enrolment works.</strong> To become <em>device owner</em> the phone must be factory-reset. On the first setup screen, tap the welcome
-        screen <strong>six times</strong> to open the QR reader and scan the provisioning QR below. A plain APK link alone can <strong>not</strong> fully
-        enrol a phone — it installs the agent as an ordinary app without management rights, for testing only.
-      </div>
+      <p className="muted">Mint a one-time enrolment, then scan its QR code with the phone. It is valid for 15 minutes and works once.</p>
 
       <Card title="1 · Mint an enrolment">
         <div className="row-form">
           <Field label="Note (optional)" hint="Only visible to admins, e.g. batch or site">
             <input value={note} onChange={(e) => setNote(e.target.value)} maxLength={120} />
           </Field>
-          <Field label="Setup Wi-Fi SSID (optional)" hint="Passwords are never put in the QR">
+          <Field label="Setup Wi-Fi SSID (optional)" hint="Company phones only. Passwords are never put in the QR">
             <input value={ssid} onChange={(e) => setSsid(e.target.value)} maxLength={32} />
           </Field>
           <button className="btn btn-primary" disabled={busy} onClick={() => void mint()}>
@@ -56,83 +53,85 @@ export function EnrolPage() {
         </div>
       </Card>
 
-      {!minted && (
-        <Card title="2 · Scan on the factory-reset phone">
-          <Empty>Mint an enrolment in step 1 and its provisioning QR appears here. It is valid for 15 minutes and can be used once.</Empty>
-        </Card>
-      )}
-      {minted && (
-        <Card
-          title="2 · Scan on the factory-reset phone"
-          actions={
+      <Card
+        title="2 · Scan it with the phone"
+        actions={
+          minted && left > 0 ? (
             <Badge tone={left > 60 ? 'info' : 'warn'}>
               expires in {Math.floor(left / 60)}:{String(left % 60).padStart(2, '0')}
             </Badge>
-          }
-        >
-          {left === 0 ? (
-            <Empty>This token has expired. Mint a new one.</Empty>
-          ) : (
-            <div className="enrol-grid">
-              <div className="qr-box">
-                <QrImage size="xl" text={JSON.stringify(minted.provisioning)} label="Device-owner provisioning QR code" />
-                <span className="small muted">Device-owner provisioning QR</span>
-              </div>
-              <div className="stack">
-                <ol className="steps">
-                  <li>Factory-reset the company phone.</li>
-                  <li>On the welcome screen, tap six times and scan this QR.</li>
-                  <li>The phone downloads the signed agent, checks its signature and becomes device owner.</li>
-                  <li>The employee reads the notice and taps “I understand”.</li>
-                  <li>The phone appears below as <em>Unnamed device</em> — give it a name.</li>
-                </ol>
-                <Field label="Install page (share with the person enrolling)">
-                  <input readOnly value={installUrl(minted.token)} onFocus={(e) => e.currentTarget.select()} />
-                </Field>
-                <div className="btn-row">
-                  <a className="btn" href={`#/e/${minted.token}`} target="_blank" rel="noreferrer">
-                    Open install page
-                  </a>
-                  <button className="btn btn-primary" onClick={() => void simulate()} disabled={busy}>
-                    ▯ Simulate a phone scanning this QR
-                  </button>
-                </div>
-                <details>
-                  <summary className="small">Raw provisioning payload</summary>
-                  <pre className="code">{JSON.stringify(minted.provisioning, null, 2)}</pre>
-                </details>
-              </div>
-            </div>
-          )}
-        </Card>
-      )}
-      {minted && left > 0 && (
-        <Card title="Personal or test phone (no factory reset)">
+          ) : undefined
+        }
+      >
+        <div className="seg" role="tablist" aria-label="Type of phone">
+          <button role="tab" aria-selected={kind === 'existing'} className={kind === 'existing' ? 'on' : ''} onClick={() => setKind('existing')}>
+            Existing phone
+            <small>no reset · 1 minute</small>
+          </button>
+          <button role="tab" aria-selected={kind === 'company'} className={kind === 'company' ? 'on' : ''} onClick={() => setKind('company')}>
+            Factory-reset company phone
+            <small>zero-touch · fully managed</small>
+          </button>
+        </div>
+        {!minted ? (
+          <Empty>Mint an enrolment in step 1 and its QR code appears here.</Empty>
+        ) : left === 0 ? (
+          <Empty>This enrolment has expired. Mint a new one.</Empty>
+        ) : kind === 'existing' ? (
           <div className="enrol-grid">
             <div className="qr-box">
-              <QrImage size="lg" text={minted.standardLink} label="Enrolment QR for a phone without a factory reset" />
-              <span className="small muted">Scan with the phone&apos;s camera app</span>
+              <QrImage size="lg" text={installUrl(minted.token)} label="Enrolment QR for an existing phone" />
+              <span className="small muted">Scan with the phone&apos;s camera</span>
             </div>
             <div className="stack">
               <ol className="steps">
+                <li>Open the camera on the Android phone and scan this code.</li>
                 <li>
-                  On the phone, install the <strong>Mob Hunter device agent</strong> (<Link to="/download">Android apps</Link>).
+                  Tap <strong>Install Mob Hunter &amp; enrol</strong>, then <strong>Install</strong> and <strong>Open</strong>. The phone enrols itself.
                 </li>
-                <li>Open the phone&apos;s camera and scan this code. The Mob Hunter app opens and enrols the phone.</li>
-                <li>Allow notifications and location (choose “Allow all the time”), then read the notice and tap “I understand”.</li>
+                <li>Allow notifications and location, then read the notice and tap “I understand”.</li>
                 <li>The phone appears below within a minute.</li>
               </ol>
               <p className="small muted">
-                Uses the same one-time token as the company-device QR above, so only one of the two can be used. The organisation sees health and, only against a
-                ticket, location; it cannot wipe the phone, reboot it, install apps or enforce policy.
+                The organisation sees health and, only against a ticket, location. It cannot wipe the phone, reboot it, install apps or enforce policy — use a
+                factory-reset company phone for that.
               </p>
-              <Field label="Or paste this link into the Mob Hunter app">
+              <Field label="Or send this link to the phone">
                 <input readOnly value={installUrl(minted.token)} onFocus={(e) => e.currentTarget.select()} />
               </Field>
             </div>
           </div>
-        </Card>
-      )}
+        ) : (
+          <div className="enrol-grid">
+            <div className="qr-box">
+              <QrImage size="xl" text={JSON.stringify(minted.provisioning)} label="Device-owner provisioning QR code" />
+              <span className="small muted">Scan on the phone&apos;s Welcome screen</span>
+            </div>
+            <div className="stack">
+              <ol className="steps">
+                <li>Factory-reset the company phone.</li>
+                <li>
+                  On the <em>Welcome</em> screen, <strong>tap six times</strong> to open the QR reader, connect to Wi-Fi and scan this code.
+                </li>
+                <li>Android downloads, verifies and installs Mob Hunter by itself and makes it device owner.</li>
+                <li>The employee reads the notice and taps “I understand”. The phone appears below.</li>
+              </ol>
+              <div className="btn-row">
+                <a className="btn" href={`#/e/${minted.token}`} target="_blank" rel="noreferrer">
+                  Open enrolment page
+                </a>
+                <button className="btn" onClick={() => void simulate()} disabled={busy}>
+                  ▯ Simulate a phone scanning this QR
+                </button>
+              </div>
+              <details>
+                <summary className="small">Raw provisioning payload</summary>
+                <pre className="code">{JSON.stringify(minted.provisioning, null, 2)}</pre>
+              </details>
+            </div>
+          </div>
+        )}
+      </Card>
 
       <Card title="3 · New / unnamed devices" actions={<Link to="/devices?unnamed=1">Open list</Link>}>
         {unnamed?.length ? (

@@ -108,6 +108,17 @@ try {
 
   await page.getByRole('link', { name: /Add devices/ }).click();
   await page.getByRole('button', { name: 'Mint token + QR' }).click();
+  // Existing phone: the QR opens the enrolment page; on Android it offers one button that opens
+  // the app with the enrolment link, or downloads the published APK when the app is missing.
+  const installUrl = await page.getByLabel('Or send this link to the phone').inputValue();
+  const androidCtx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, userAgent: 'Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Mobile Safari/537.36' });
+  const enrolPage = await androidCtx.newPage();
+  await enrolPage.goto(installUrl);
+  const href = await enrolPage.getByRole('link', { name: 'Install Mob Hunter & enrol' }).getAttribute('href');
+  assert.match(href, /^intent:\/\/enrol\?server=.+&token=.+&pin=.+#Intent;scheme=mobhunter;package=com\.mobhunter\.agent;S\.browser_fallback_url=https%3A%2F%2Fmob-hunter\.github\.io%2Fdownloads%2Fmob-hunter-agent\.apk;end$/);
+  await androidCtx.close();
+  ok('existing-phone QR opens a one-button page: open the app with the enrolment link, or download the agent');
+  await page.getByRole('tab', { name: /Factory-reset company phone/ }).click();
   await page.getByAltText('Device-owner provisioning QR code').waitFor();
   const prov = JSON.parse(await page.locator('pre.code').textContent());
   // Provisioning downloads the release-signed agent published on GitHub Pages (APK_DOWNLOAD_URL in wrangler.toml).

@@ -74,7 +74,7 @@ export function EmployeesPage() {
             ))}
           </ul>
         ) : (
-          <Empty>No employees{q ? ' match' : ''}.</Empty>
+          <Empty>{q ? 'No employees match.' : 'No employees yet. Add people below, or import your HR list as a CSV file (name, email, department).'}</Empty>
         )}
       </Card>
     </div>
