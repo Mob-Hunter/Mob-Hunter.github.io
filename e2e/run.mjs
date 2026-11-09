@@ -88,6 +88,10 @@ try {
   await go(/Add devices/);
   await page.getByRole('button', { name: 'Mint token + QR' }).click();
   await page.getByAltText('Device-owner provisioning QR code').waitFor();
+  // The QR must actually render (a malformed SVG shows only its alt text) and be large enough to scan from a screen.
+  const qr = await page.getByAltText('Device-owner provisioning QR code').evaluate((img) => ({ ok: img.complete && img.naturalWidth > 0, w: img.getBoundingClientRect().width }));
+  assert.ok(qr.ok, 'provisioning QR image failed to load');
+  assert.ok(qr.w >= 300, `provisioning QR too small to scan: ${qr.w}px`);
   const installUrl = await page.getByLabel('Install page (share with the person enrolling)').inputValue();
   assert.match(installUrl, /#\/e\/[A-Za-z0-9_-]{20,}$/);
   ok('enrolment minted: QR + install link rendered');

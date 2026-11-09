@@ -189,9 +189,10 @@ pre.code { background: var(--surface-2); padding: 10px; border-radius: 8px; over
 
 /* enrolment */
 .enrol-grid { display: grid; gap: 16px; }
-@media (min-width: 760px) { .enrol-grid { grid-template-columns: 300px 1fr; } }
+@media (min-width: 760px) { .enrol-grid { grid-template-columns: 336px 1fr; } }
 .qr-box { display: grid; justify-items: center; gap: 6px; }
-.qr { width: 260px; height: 260px; max-width: 100%; background: #fff; padding: 6px; border-radius: 8px; image-rendering: pixelated; }
+.qr { display: block; width: 236px; height: auto; aspect-ratio: 1; max-width: 100%; background: #fff; border: 1px solid var(--border); border-radius: 6px; }
+.qr-sm { width: 152px; } .qr-md { width: 196px; } .qr-lg { width: 236px; } .qr-xl { width: 320px; }
 .qr-loading { display: grid; place-items: center; color: #555; }
 
 /* map */
@@ -303,7 +304,6 @@ input[type='file'] { min-height: 0; padding: 6px; }
 .page-head h1 .badge { vertical-align: middle; font-size: .8rem; }
 .download-card { display: grid; gap: 14px; align-items: start; }
 @media (min-width: 560px) { .download-card { grid-template-columns: 200px 1fr; } }
-.download-card .qr { width: 200px; height: 200px; margin: 0 auto; }
 .landing-card { margin: 8px 0 16px; }
 
 /* Phone tables: rows become labelled cards instead of a sideways-scrolling grid */
@@ -369,13 +369,16 @@ h1.brand { margin: 0; font-size: 1.4rem; }
 @media (prefers-reduced-motion: reduce) { .lp-notif-alert { animation: none; } }
 .lp-section { padding: 64px 0; }
 .lp-alt { background: var(--surface); border-block: 1px solid var(--border); }
-.lp-head { text-align: center; max-width: 720px; margin: 0 auto 36px; }
+.lp-head { display: grid; gap: 12px 48px; margin: 0 0 32px; align-items: end; }
+@media (min-width: 900px) { .lp-head { grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr); } }
+.lp-head-lead { margin: 0; color: var(--muted); line-height: 1.6; font-size: 1.02rem; max-width: 52ch; }
+.lp-more { margin: 4px 0 0; font-weight: 600; }
 .lp-head h2 { font-size: clamp(1.5rem, 3.2vw, 2.1rem); line-height: 1.2; letter-spacing: -.01em; margin: 0; text-wrap: balance; }
 .lp-head h2:focus { outline: none; }
 .lp-sub { color: var(--muted); max-width: 640px; margin: -20px auto 28px; }
 .lp-steps { list-style: none; padding: 0; margin: 0; display: grid; gap: 16px; counter-reset: none; }
 @media (min-width: 760px) { .lp-steps { grid-template-columns: repeat(3, 1fr); } }
-.lp-step { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 22px; box-shadow: var(--shadow); }
+.lp-step { background: var(--surface); border: 1px solid var(--border); border-top: 3px solid var(--primary); border-radius: 4px 4px 12px 12px; padding: 22px; box-shadow: var(--shadow); }
 .lp-step-n { display: inline-grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; background: var(--primary); color: var(--primary-ink); font-weight: 700; margin-bottom: 12px; }
 .lp-step h3, .lp-feature h3, .lp-role h3 { margin: 0 0 6px; font-size: 1.05rem; }
 .lp-step p, .lp-feature p, .lp-role p { margin: 0; color: var(--muted); line-height: 1.55; }
@@ -399,7 +402,9 @@ h1.brand { margin: 0; font-size: 1.4rem; }
 .lp-final { background: linear-gradient(135deg, color-mix(in srgb, var(--primary) 12%, var(--surface)), var(--surface)); border-top: 1px solid var(--border); }
 .lp-final-grid { display: grid; gap: 28px; align-items: center; }
 .lp-final h2 { font-size: clamp(1.5rem, 3vw, 2rem); margin: 0 0 8px; }
-.lp-final-qr { justify-self: center; background: #fff; padding: 14px; border-radius: 16px; box-shadow: var(--shadow); width: 220px; }
+.lp-final-qr { justify-self: start; background: #fff; padding: 10px; border-radius: 14px; box-shadow: var(--shadow); line-height: 0; }
+.lp-final-qr .qr { border: 0; }
+@media (min-width: 760px) { .lp-final-qr { justify-self: end; } }
 @media (min-width: 760px) { .lp-final-grid { grid-template-columns: 1fr auto; } }
 .lp-footer { border-top: 1px solid var(--border); background: var(--surface); padding: 22px 0; font-size: .9rem; color: var(--muted); }
 .lp-footer-inner { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; }
@@ -419,3 +424,32 @@ h1.brand { margin: 0; font-size: 1.4rem; }
 .gs-steps li.done strong { color: var(--muted); text-decoration: line-through; font-weight: 500; }
 @media (prefers-reduced-motion: reduce) { .gs-progress span { transition: none; } }
 .lp-section { scroll-margin-top: 64px; }
+
+/* ---------- Android app download cards ---------- */
+.apk-grid { display: grid; gap: 16px; }
+@media (min-width: 900px) { .apk-grid:not(.apk-grid-compact) { grid-template-columns: 1fr 1fr; } }
+.apk-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow); display: flex; flex-direction: column; min-width: 0; overflow: hidden; }
+.apk-head { display: flex; gap: 12px; align-items: center; padding: 16px 18px; border-bottom: 1px solid var(--border); }
+.apk-head h3 { margin: 0 0 4px; font-size: 1.02rem; }
+.apk-icon { flex: none; width: 40px; height: 40px; border-radius: 10px; display: grid; place-items: center; background: var(--primary); color: var(--primary-ink); font-size: 1.2rem; }
+.apk-body { display: grid; gap: 16px; padding: 18px; align-items: start; }
+@media (min-width: 520px) { .apk-body { grid-template-columns: auto 1fr; } }
+.apk-qr { margin: 0; display: grid; justify-items: center; gap: 6px; }
+.apk-qr figcaption { font-size: .74rem; color: var(--muted); }
+.apk-info { display: grid; gap: 14px; min-width: 0; }
+.apk-info p { margin: 0; color: var(--muted); font-size: .92rem; line-height: 1.55; }
+.apk-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.apk-size { font-weight: 500; opacity: .8; font-size: .85em; margin-left: 4px; padding-left: 8px; border-left: 1px solid color-mix(in srgb, currentColor 40%, transparent); }
+.apk-verify { margin-top: auto; border-top: 1px solid var(--border); background: var(--bg); padding: 10px 18px; font-size: .88rem; }
+.apk-verify summary { cursor: pointer; color: var(--muted); font-weight: 600; padding: 4px 0; }
+.apk-verify[open] summary { margin-bottom: 8px; }
+.apk-sha { display: block; font-family: var(--mono); font-size: .78rem; word-break: break-all; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; }
+.apk-verify-row { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; margin-top: 6px; }
+@media (max-width: 519px) { .apk-actions .btn-primary { flex: 1 1 100%; } }
+
+.lp-track { background: rgb(255 255 255 / 8%); border-radius: 12px; padding: 8px; display: grid; gap: 6px; font-size: .68rem; color: #cbd5e1; }
+.lp-track svg { width: 100%; height: auto; display: block; }
+.lp-grid { stroke: rgb(255 255 255 / 9%); stroke-width: 1; fill: none; }
+.lp-route { stroke: #38bdf8; stroke-width: 2.5; fill: none; stroke-dasharray: 4 4; }
+.lp-acc { fill: rgb(56 189 248 / 18%); stroke: rgb(56 189 248 / 50%); }
+.lp-pin { fill: #ef4444; stroke: #fff; stroke-width: 2; }

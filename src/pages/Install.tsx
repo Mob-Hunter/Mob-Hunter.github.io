@@ -23,7 +23,7 @@ export function InstallPage() {
           <>
             <Card title="Scan this on the phone's setup screen">
               <div className="qr-box">
-                <QrImage text={JSON.stringify(q.data.provisioning)} label="Device-owner provisioning QR" />
+                <QrImage size="xl" text={JSON.stringify(q.data.provisioning)} label="Device-owner provisioning QR" />
               </div>
               <ol className="steps">
                 <li>

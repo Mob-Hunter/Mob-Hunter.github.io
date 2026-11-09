@@ -75,7 +75,7 @@ export function EnrolPage() {
           ) : (
             <div className="enrol-grid">
               <div className="qr-box">
-                <QrImage text={JSON.stringify(minted.provisioning)} label="Device-owner provisioning QR code" />
+                <QrImage size="xl" text={JSON.stringify(minted.provisioning)} label="Device-owner provisioning QR code" />
                 <span className="small muted">Device-owner provisioning QR</span>
               </div>
               <div className="stack">

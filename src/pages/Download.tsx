@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Badge, Card, QrImage } from '../ui/kit';
+import { Badge, QrImage } from '../ui/kit';
 import { APK_FILES, DOWNLOADS_URL } from '../config';
 
 /** Absolute base for downloads: the live server when configured, else this origin. */
@@ -32,6 +32,83 @@ function useChecksums(base: string) {
   return sums;
 }
 
+/** File size from a HEAD request (Content-Length is readable cross-origin). */
+function useFileSize(url: string) {
+  const [size, setSize] = useState<number | null>(null);
+  useEffect(() => {
+    let alive = true;
+    fetch(url, { method: 'HEAD', cache: 'no-store' })
+      .then((r) => {
+        const n = Number(r.headers.get('content-length'));
+        if (alive && r.ok && n > 0) setSize(n);
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [url]);
+  return size;
+}
+
+function CopyButton({ text, label, done = 'Copied' }: { text: string; label: string; done?: string }) {
+  const [copied, setCopied] = useState(false);
+  const copy = () =>
+    void navigator.clipboard?.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    });
+  return (
+    <button type="button" className="btn btn-ghost btn-sm" onClick={copy} aria-live="polite">
+      {copied ? `✓ ${done}` : label}
+    </button>
+  );
+}
+
+function ApkCard({ app, base, sha }: { app: (typeof APK_FILES)[number]; base: string; sha?: string }) {
+  const url = `${base}/${app.file}`;
+  const size = useFileSize(url);
+  return (
+    <article className="apk-card">
+      <header className="apk-head">
+        <span className="apk-icon" aria-hidden>
+          {app.file.includes('agent') ? '⛨' : '◈'}
+        </span>
+        <div>
+          <h3>{app.name}</h3>
+          <Badge>{app.who}</Badge>
+        </div>
+      </header>
+      <div className="apk-body">
+        <figure className="apk-qr">
+          <QrImage size="sm" text={url} label={`QR code to download ${app.name}`} />
+          <figcaption>Scan with the phone camera</figcaption>
+        </figure>
+        <div className="apk-info">
+          <p>{app.text}</p>
+          <div className="apk-actions">
+            <a className="btn btn-primary" href={url} download>
+              ↓ Download APK{size ? <span className="apk-size">{(size / 1048576).toFixed(1)} MB</span> : null}
+            </a>
+            <CopyButton text={url} label="Copy link" done="Link copied" />
+          </div>
+        </div>
+      </div>
+      {sha && (
+        <details className="apk-verify">
+          <summary>Verify this file (SHA-256)</summary>
+          <code className="apk-sha">{sha}</code>
+          <div className="apk-verify-row">
+            <span className="tiny muted">
+              Compare with <code>sha256sum {app.file}</code> before installing.
+            </span>
+            <CopyButton text={sha} label="Copy hash" />
+          </div>
+        </details>
+      )}
+    </article>
+  );
+}
+
 /** Download cards with a QR code per APK — scan with the phone's camera to download. */
 export function ApkDownloads({ compact = false }: { compact?: boolean }) {
   const base = downloadsBase();
@@ -43,39 +120,10 @@ export function ApkDownloads({ compact = false }: { compact?: boolean }) {
       </div>
     );
   return (
-    <div className={compact ? 'stack' : 'grid2'}>
-      {APK_FILES.map((a) => {
-        const url = `${base}/${a.file}`;
-        return (
-          <Card
-            key={a.file}
-            title={
-              <>
-                {a.name} <Badge>{a.who}</Badge>
-              </>
-            }
-          >
-            <div className="download-card">
-              <QrImage text={url} label={`QR code to download ${a.name}`} />
-              <div className="stack">
-                <p className="small">{a.text}</p>
-                <a className="btn btn-primary" href={url} download>
-                  Download APK
-                </a>
-                <p className="tiny muted break">
-                  {url}
-                  {sums?.[a.file] && (
-                    <>
-                      <br />
-                      SHA-256 {sums[a.file]}
-                    </>
-                  )}
-                </p>
-              </div>
-            </div>
-          </Card>
-        );
-      })}
+    <div className={compact ? 'apk-grid apk-grid-compact' : 'apk-grid'}>
+      {APK_FILES.map((a) => (
+        <ApkCard key={a.file} app={a} base={base} sha={sums?.[a.file]} />
+      ))}
     </div>
   );
 }
