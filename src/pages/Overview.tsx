@@ -127,7 +127,7 @@ export function OverviewPage() {
             <Empty>No open issues.</Empty>
           )}
         </Panel>
-        <Panel title="Lost & stolen" action={<Link to="/incidents">Open →</Link>}>
+        <Panel title="Lost & stolen" action={<Link to={openIncidents.length ? '/incidents' : '/incidents/new'}>{openIncidents.length ? 'Open →' : 'Report →'}</Link>}>
           {openIncidents.length ? (
             <ul className="attn">
               {openIncidents.slice(0, 4).map((i) => (
@@ -311,7 +311,7 @@ function QuickActions({ role }: { role: Role }) {
     { to: '/enrol', label: '＋ Add a device', primary: true, show: can(role, 'enrollment.create') },
     { to: '/devices', label: '▤ Find a device', show: true },
     { to: '/locations', label: '⌖ Locations', show: can(role, 'location.read') },
-    { to: '/incidents', label: '⚑ Lost & stolen', show: can(role, 'location.read') },
+    { to: '/incidents/new', label: '⚑ Report lost / stolen', show: can(role, 'command.LOST_MODE_ON') },
     { to: '/compliance', label: '✓ Compliance', show: !can(role, 'enrollment.create') },
     { to: '/users', label: '⚿ Invite a user', show: can(role, 'users.manage') },
     { to: '/audit', label: '⛓ Audit log', show: can(role, 'audit.read') },

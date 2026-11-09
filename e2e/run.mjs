@@ -188,11 +188,13 @@ try {
   assert.ok((await page.locator('table tbody tr', { hasText: 'INC-1001' }).count()) >= 2);
   ok('Locations workspace: seeded ticket INC-1001 shows fleet map, latest position per device and history');
 
-  // Lost / stolen incident with active tracking
-  await go('Devices');
-  await page.getByRole('heading', { name: 'Devices', exact: true }).waitFor();
-  await page.getByRole('link', { name: "Nimal's field phone" }).click();
-  await page.getByRole('heading', { name: 'Report lost or stolen' }).waitFor();
+  // Lost / stolen incident with active tracking — the guided flow from Lost & stolen
+  await go(/Lost & stolen/);
+  await page.getByRole('link', { name: /Report a lost or stolen phone/ }).click();
+  await page.getByRole('heading', { name: 'Report a lost or stolen phone' }).waitFor();
+  await page.getByLabel('Search phones').fill('Nimal');
+  await page.locator('.pick', { hasText: "Nimal's field phone" }).click();
+  await page.getByRole('heading', { name: '2 · What happened?' }).waitFor();
   await page.getByLabel('Report as').selectOption('stolen');
   await page.getByLabel('Incident ticket').fill('INC-3001');
   await page.getByLabel('Tracking interval').selectOption('60');
@@ -203,14 +205,14 @@ try {
   await page.getByText(/Tracking every 1 min/).first().waitFor();
   await page.getByText('Stolen device:').waitFor();
   await page.getByRole('img', { name: /Live track with \d+ location fixes/ }).waitFor({ timeout: 30_000 });
+  assert.equal(await page.locator('.flow li[aria-current="step"] strong').textContent(), 'Follow live');
   await go(/Lost & stolen/);
   await page.getByRole('heading', { name: /Open incidents \(1\)/ }).waitFor();
   await page.getByRole('link', { name: "Nimal's field phone" }).click();
-  await page.getByLabel('Outcome').selectOption('recovered');
-  await page.getByRole('button', { name: 'Close incident' }).click();
+  await page.getByRole('button', { name: /Recovered/ }).click();
   await page.locator('.toast-ok', { hasText: 'Lost Mode ended' }).waitFor();
   await page.getByText(/Closed as/).waitFor({ timeout: 20_000 });
-  ok('stolen report → live tracking page with map → listed under Lost & stolen → closed as recovered');
+  ok('guided report (pick phone → form) → live tracking with step tracker → one-click close as recovered');
   await signOut();
 
   // Audit chain verifies

@@ -44,7 +44,14 @@ export function DeviceDetailPage() {
       </p>
       <div className="page-head">
         <h1>{device.displayName}</h1>
-        {stateBadge(device)}
+        <div className="page-head-actions">
+          {stateBadge(device)}
+          {canReportLost && !device.activeIncident && device.state !== 'wiped' && device.state !== 'retired' && !device.pendingRemoval && (
+            <Link className="btn btn-danger btn-sm" to={`/incidents/new?device=${device.id}`}>
+              ⚑ Report lost or stolen
+            </Link>
+          )}
+        </div>
       </div>
 
       {device.activeIncident && (
@@ -476,13 +483,13 @@ function RemovalPendingCard({ device }: { device: import('../core/backend').Devi
 }
 
 /** Report lost or stolen: Lost Mode + time-boxed active tracking (Location Operator). */
-function ReportIncidentCard({ deviceId, acknowledged }: { deviceId: string; acknowledged: boolean }) {
+export function ReportIncidentCard({ deviceId, acknowledged, title = 'Report lost or stolen' }: { deviceId: string; acknowledged: boolean; title?: string }) {
   const rt = useRuntime();
   const nav = useNavigate();
   const { run, busy } = useAction();
   const [f, setF] = useState({ kind: 'lost' as 'lost' | 'stolen', ticket: '', reason: '', intervalSec: 120, durationHours: 24, message: 'This phone belongs to the company. Please call the number below.', phone: '' });
   return (
-    <Card title="Report lost or stolen">
+    <Card title={title}>
       {!acknowledged ? (
         <p className="small muted">The employee has not acknowledged the device notice yet, so location cannot be collected.</p>
       ) : (

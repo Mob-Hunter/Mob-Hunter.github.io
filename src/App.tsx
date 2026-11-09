@@ -11,7 +11,7 @@ import { CompliancePage } from './pages/Compliance';
 import { EnrolPage } from './pages/Enrol';
 import { InstallPage } from './pages/Install';
 import { LocationsPage } from './pages/Locations';
-import { IncidentDetailPage, IncidentsPage } from './pages/Incidents';
+import { IncidentDetailPage, IncidentsPage, ReportIncidentPage } from './pages/Incidents';
 import { EmployeesPage } from './pages/Employees';
 import { UsersPage } from './pages/Users';
 import { AuditPage } from './pages/Audit';
@@ -49,7 +49,7 @@ type ActionItem = { to: string; label: string; icon: string; perm?: Permission; 
 const ACTIONS: ActionItem[] = [
   { to: '/enrol', label: 'Add a device', icon: '＋', perm: 'enrollment.create', keywords: 'enrol qr' },
   { to: '/devices?unnamed=1', label: 'Name new devices', icon: '✎', perm: 'device.update', keywords: 'unnamed rename assign' },
-  { to: '/devices', label: 'Report a phone lost or stolen', icon: '⚑', perm: 'command.LOST_MODE_ON', keywords: 'incident tracking' },
+  { to: '/incidents/new', label: 'Report a phone lost or stolen', icon: '⚑', perm: 'command.LOST_MODE_ON', keywords: 'incident tracking stolen lost mode' },
   { to: '/locations', label: 'Find a phone’s location', icon: '⌖', perm: 'location.read', keywords: 'locate map' },
   { to: '/users', label: 'Invite a console user', icon: '⚿', perm: 'users.manage', keywords: 'admin add user' },
   { to: '/employees', label: 'Import employees (CSV)', icon: '☺', perm: 'employee.manage', keywords: 'hr' },
@@ -217,6 +217,7 @@ export function App() {
         <Route path="/enrol" element={guarded(<EnrolPage />)} />
         <Route path="/locations" element={guarded(<LocationsPage />)} />
         <Route path="/incidents" element={guarded(<IncidentsPage />)} />
+        <Route path="/incidents/new" element={guarded(<ReportIncidentPage />)} />
         <Route path="/incidents/:id" element={guarded(<IncidentDetailPage />)} />
         <Route path="/employees" element={guarded(<EmployeesPage />)} />
         <Route path="/users" element={guarded(<UsersPage />)} />
