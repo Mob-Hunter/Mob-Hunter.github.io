@@ -82,14 +82,22 @@ try {
   await page.getByRole('button', { name: 'Create administrator' }).click();
   const rootSecret = await page.getByLabel('Or enter this key manually').inputValue();
   ok('first-run setup created the Super Admin and showed the authenticator QR');
-  await page.getByRole('button', { name: /continue to sign in/ }).click();
+  // A mistyped code is refused; the right one proves the authenticator works and signs straight in.
+  await page.getByLabel('Enter the 6-digit code from the app').fill('000000');
+  await page.getByRole('button', { name: 'Verify and open the console' }).click();
+  await page.getByRole('alert').first().waitFor();
+  await page.getByLabel('Enter the 6-digit code from the app').fill(totp(rootSecret));
+  await page.getByRole('button', { name: 'Verify and open the console' }).click();
+  await page.getByRole('heading', { name: 'Overview' }).waitFor();
+  await page.getByRole('heading', { name: 'Get started' }).waitFor();
+  assert.equal(await page.locator('.gs-steps li').count(), 4);
+  ok('setup confirmed the first authenticator code and opened the console with the Get started checklist');
 
-  await signIn('root@corp.test', rootSecret);
   assert.equal(await page.locator('.env-live').textContent(), 'Live');
   assert.equal(await page.evaluate(() => document.cookie), '', 'session cookie must be HttpOnly');
   ok('signed in against the server (HttpOnly cookie, "Live" mode)');
 
-  await page.getByRole('link', { name: /Users & access/ }).click();
+  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: /Users & access/ }).click();
   await page.getByLabel('Name', { exact: true }).fill('Lee Locator');
   await page.getByLabel('Work e-mail').fill('lee@corp.test');
   await page.getByLabel('Role').selectOption('LOCATION_OPERATOR');
@@ -134,7 +142,7 @@ try {
   await page.getByRole('button', { name: 'Sign out' }).click();
 
   await signIn('root@corp.test', rootSecret);
-  await page.getByRole('link', { name: /Audit log/ }).click();
+  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: /Audit log/ }).click();
   await page.getByRole('button', { name: 'Verify hash chain' }).click();
   await page.getByText(/Chain intact/).waitFor();
   ok('audit hash chain verifies on the server');

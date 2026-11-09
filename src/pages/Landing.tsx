@@ -1,45 +1,295 @@
-import { useEffect } from 'react';
+import { useEffect, type MouseEvent, type ReactNode } from 'react';
 import { ApkDownloads } from './Download';
 import { QrImage } from '../ui/kit';
 import { SERVER_URL } from '../config';
+import { COLLECTION_NOTICE } from '../core/enrollment';
 
 /**
- * Shown on copies of the console that are not the live server (e.g. GitHub Pages)
- * when a production server is configured. No demo, no data — it sends people to the server.
+ * Public product page, shown on copies of the console that are not the live
+ * server (GitHub Pages). It explains the product, sends people to the console
+ * and offers the Android apps. It never holds data.
  */
 export function Landing() {
   const target = `${SERVER_URL}/`;
   useEffect(() => {
-    // Deep links (enrolment pages, employee transparency links, a specific console page) go straight to the server.
-    if (location.hash && location.hash !== '#/' && location.hash !== '#') location.replace(`${target}${location.hash}`);
+    document.title = 'Mob Hunter — company device management';
+    // Console deep links (#/e/…, #/transparency/…, #/devices/…) belong to the server.
+    if (/^#\/./.test(location.hash)) location.replace(`${target}${location.hash}`);
   }, [target]);
+
   return (
-    <div className="public-page">
-      <div className="page narrow">
-        <h1 className="brand brand-lg">
-          <span className="brand-mark" aria-hidden>
-            ◈
+    <div className="lp">
+      <a className="skip-link" href="#lp-main">
+        Skip to content
+      </a>
+      <header className="lp-nav">
+        <div className="lp-wrap lp-nav-inner">
+          <span className="brand">
+            <span className="brand-mark" aria-hidden>
+              ◈
+            </span>
+            Mob Hunter
           </span>
-          Mob Hunter
-        </h1>
-        <h1>Company device management</h1>
-        <div className="card landing-card">
-          <div className="download-card">
-            <QrImage text={target} label="QR code to open the Mob Hunter console" />
-            <div className="stack">
-              <p>The Mob Hunter console runs on your organisation&apos;s secure server.</p>
-              <a className="btn btn-primary" href={target}>
+          <nav aria-label="Page sections" className="lp-links">
+            <JumpLink to="how">How it works</JumpLink>
+            <JumpLink to="features">Features</JumpLink>
+            <JumpLink to="privacy">Privacy</JumpLink>
+            <JumpLink to="apps">Apps</JumpLink>
+          </nav>
+          <a className="btn btn-primary btn-sm" href={target}>
+            Open console
+          </a>
+        </div>
+      </header>
+
+      <main id="lp-main">
+        <section className="lp-hero">
+          <div className="lp-wrap lp-hero-grid">
+            <div className="lp-hero-copy">
+              <p className="lp-eyebrow">Company-owned Android phones</p>
+              <h1>Manage every company phone — and find a lost one — without spying on anyone.</h1>
+              <p className="lp-lead">
+                Enrol phones with one QR scan, keep them secure and up to date, and track a lost or stolen device. Employees are notified every time
+                their location is requested.
+              </p>
+              <div className="lp-cta-row">
+                <a className="btn btn-primary btn-lg" href={target}>
+                  Open the console →
+                </a>
+                <JumpLink to="apps" className="btn btn-lg">
+                  Get the Android apps
+                </JumpLink>
+              </div>
+              <ul className="lp-trust" aria-label="Security at a glance">
+                <li>Signed commands</li>
+                <li>Encrypted location</li>
+                <li>Tamper-evident audit</li>
+                <li>Auto-deleted after 30 days</li>
+              </ul>
+            </div>
+            <PhoneIllustration />
+          </div>
+        </section>
+
+        <section id="how" className="lp-section" aria-labelledby="how-h">
+          <div className="lp-wrap">
+            <SectionHead id="how-h" kicker="How it works" title="From box to managed phone in three steps" />
+            <ol className="lp-steps">
+              <Step n={1} title="Create an enrolment QR">
+                In the console, open <em>Add devices</em> and mint a one-time QR. It is valid for 15 minutes and works once.
+              </Step>
+              <Step n={2} title="Scan it on a factory-reset phone">
+                Tap the welcome screen six times and scan. Android installs the signed Mob Hunter agent as device owner and checks its signature.
+              </Step>
+              <Step n={3} title="The employee reads the notice">
+                Nothing is collected until they tap <em>I understand</em>. The phone then appears in the console, ready to name and assign.
+              </Step>
+            </ol>
+          </div>
+        </section>
+
+        <section id="features" className="lp-section lp-alt" aria-labelledby="features-h">
+          <div className="lp-wrap">
+            <SectionHead id="features-h" kicker="Features" title="Everything IT needs. Nothing it shouldn't have." />
+            <div className="lp-features">
+              <Feature icon="▤" title="Fleet at a glance">
+                Battery, storage, OS patch level, integrity and last check-in for every phone, with compliance alerts and CSV export.
+              </Feature>
+              <Feature icon="⚑" title="Lost & stolen tracking">
+                Report a phone lost and it locks with your message, then shares its position every 1–5 minutes for a limited time.
+              </Feature>
+              <Feature icon="⌖" title="Ticketed locate">
+                A one-off location fix needs a ticket and a reason. The phone shows a notification, and the employee can see every request.
+              </Feature>
+              <Feature icon="✓" title="Policies that stick">
+                Screen lock, password rules, update window, no factory reset or USB transfer, approved apps only — enforced on the phone.
+              </Feature>
+              <Feature icon="⛨" title="Safe remote actions">
+                Lock, reboot, wipe and app install are Ed25519-signed with a 10-minute expiry. Wipes need a second approver.
+              </Feature>
+              <Feature icon="↺" title="Clean offboarding">
+                Delete a device and the agent releases every restriction, gives up management and uninstalls itself. Personal data stays.
+              </Feature>
+            </div>
+          </div>
+        </section>
+
+        <section id="privacy" className="lp-section" aria-labelledby="privacy-h">
+          <div className="lp-wrap">
+            <SectionHead id="privacy-h" kicker="Privacy by design" title="Transparent to employees, by default" />
+            <div className="lp-privacy">
+              <div className="lp-list-card">
+                <h3>What the phone shares</h3>
+                <ul className="lp-check">
+                  {COLLECTION_NOTICE.collected.map((c) => (
+                    <li key={c}>{c}</li>
+                  ))}
+                </ul>
+              </div>
+              <div className="lp-list-card lp-never">
+                <h3>What it never touches</h3>
+                <ul className="lp-cross">
+                  {COLLECTION_NOTICE.notCollected.map((c) => (
+                    <li key={c}>{c}</li>
+                  ))}
+                </ul>
+                <p className="small muted">{COLLECTION_NOTICE.retention}</p>
+              </div>
+            </div>
+            <p className="center">
+              <a href={`${target}#/privacy`}>Read the full privacy notice &amp; governance review →</a>
+            </p>
+          </div>
+        </section>
+
+        <section className="lp-section lp-alt" aria-labelledby="roles-h">
+          <div className="lp-wrap">
+            <SectionHead id="roles-h" kicker="Access control" title="The right access for each person" />
+            <div className="lp-roles">
+              <Role name="Super Admin">Runs the organisation: users, roles, settings, and every action.</Role>
+              <Role name="Device Admin">Enrols, names and assigns phones; sets policy; requests wipes.</Role>
+              <Role name="Helpdesk">Sees device health; can lock, reboot and re-sync a phone.</Role>
+              <Role name="Location Operator">Locates or tracks a phone against a ticket — every view is audited.</Role>
+              <Role name="Security">Reviews the audit log, approves wipes, purges data, handles access requests.</Role>
+              <Role name="Auditor">Read-only access to the fleet and the tamper-evident audit log.</Role>
+            </div>
+            <p className="small muted center">Multi-factor sign-in for everyone. Permissions are enforced on the server on every request.</p>
+          </div>
+        </section>
+
+        <section id="apps" className="lp-section" aria-labelledby="apps-h">
+          <div className="lp-wrap">
+            <SectionHead id="apps-h" kicker="Android apps" title="Scan to download" />
+            <p className="lp-sub center">Point the phone&apos;s camera at a code, or tap Download on the phone itself. Each file shows its SHA-256 so IT can verify it.</p>
+            <ApkDownloads />
+          </div>
+        </section>
+
+        <section className="lp-section lp-final" aria-labelledby="final-h">
+          <div className="lp-wrap lp-final-grid">
+            <div>
+              <h2 id="final-h">Ready to sign in?</h2>
+              <p className="lp-lead">Open the console on this computer, or scan the code with your phone.</p>
+              <a className="btn btn-primary btn-lg" href={target}>
                 Open the console →
               </a>
               <p className="tiny muted break">{target}</p>
             </div>
+            <div className="lp-final-qr">
+              <QrImage text={target} label="QR code to open the Mob Hunter console" />
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <footer className="lp-footer">
+        <div className="lp-wrap lp-footer-inner">
+          <span>
+            <span className="brand-mark" aria-hidden>
+              ◈
+            </span>{' '}
+            Mob Hunter · company device management
+          </span>
+          <span>
+            <a href={`${target}#/privacy`}>Privacy &amp; governance</a> · <a href={target}>Console</a>
+          </span>
+        </div>
+      </footer>
+    </div>
+  );
+}
+
+/** In-page link that scrolls without changing the URL hash (the hash belongs to console deep links). */
+function JumpLink({ to, children, className }: { to: string; children: ReactNode; className?: string }) {
+  const go = (e: MouseEvent) => {
+    e.preventDefault();
+    const el = document.getElementById(to);
+    if (!el) return;
+    el.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
+    el.querySelector<HTMLElement>('h2')?.focus({ preventScroll: true });
+  };
+  return (
+    <a href={`#${to}`} onClick={go} className={className}>
+      {children}
+    </a>
+  );
+}
+
+function SectionHead({ id, kicker, title }: { id: string; kicker: string; title: string }) {
+  return (
+    <div className="lp-head">
+      <p className="lp-eyebrow">{kicker}</p>
+      <h2 id={id} tabIndex={-1}>
+        {title}
+      </h2>
+    </div>
+  );
+}
+
+function Step({ n, title, children }: { n: number; title: string; children: ReactNode }) {
+  return (
+    <li className="lp-step">
+      <span className="lp-step-n" aria-hidden>
+        {n}
+      </span>
+      <h3>{title}</h3>
+      <p>{children}</p>
+    </li>
+  );
+}
+
+function Feature({ icon, title, children }: { icon: string; title: string; children: ReactNode }) {
+  return (
+    <div className="lp-feature">
+      <span className="lp-icon" aria-hidden>
+        {icon}
+      </span>
+      <h3>{title}</h3>
+      <p>{children}</p>
+    </div>
+  );
+}
+
+function Role({ name, children }: { name: string; children: ReactNode }) {
+  return (
+    <div className="lp-role">
+      <h3>{name}</h3>
+      <p>{children}</p>
+    </div>
+  );
+}
+
+/** A phone showing the transparency notification — drawn with CSS, no images. */
+function PhoneIllustration() {
+  return (
+    <div className="lp-phone-wrap" aria-hidden>
+      <div className="lp-phone">
+        <div className="lp-phone-bar">
+          <span>09:41</span>
+          <span>● 86%</span>
+        </div>
+        <div className="lp-notif lp-notif-alert">
+          <strong>Your device location was requested</strong>
+          <span>Requested by IT for ticket INC-1042. Tap to see every request.</span>
+        </div>
+        <div className="lp-notif">
+          <strong>This device is managed by your organisation</strong>
+          <span>IT can see device health and, when needed, its location.</span>
+        </div>
+        <div className="lp-phone-stats">
+          <div>
+            <b>Patch</b>
+            <span>Oct 2026</span>
+          </div>
+          <div>
+            <b>Policy</b>
+            <span>Compliant</span>
+          </div>
+          <div>
+            <b>Lock</b>
+            <span>5 min</span>
           </div>
         </div>
-        <h2>Android apps</h2>
-        <ApkDownloads />
-        <p className="tiny muted">
-          <a href={`${target}#/privacy`}>Privacy notice &amp; governance</a>
-        </p>
       </div>
     </div>
   );
