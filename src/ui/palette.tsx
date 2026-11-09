@@ -49,6 +49,8 @@ export function CommandPalette({ open, onClose, pages }: { open: boolean; onClos
       .slice(0, 40);
   }, [q, pages, devices, employees, users]);
 
+  // Typing resets the highlight to the best match. The pointer only changes it when it really moves
+  // (onMouseMove): a list opening under a resting cursor must not steal the keyboard selection.
   useEffect(() => setActive(0), [q]);
   if (!open) return null;
 
@@ -103,7 +105,7 @@ export function CommandPalette({ open, onClose, pages }: { open: boolean; onClos
                   role="option"
                   aria-selected={i === active}
                   className={`palette-item${i === active ? ' active' : ''}`}
-                  onMouseEnter={() => setActive(i)}
+                  onMouseMove={() => i !== active && setActive(i)}
                   onClick={() => go(x)}
                 >
                   <span className="palette-icon" aria-hidden>

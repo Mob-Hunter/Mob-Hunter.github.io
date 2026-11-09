@@ -337,6 +337,9 @@ try {
   const row = page.locator('.device-list li:not(.unnamed)').first();
   const deviceName = (await row.locator('.device-name').textContent()).trim();
   const serial = (await row.locator('.device-main .small').textContent()).split(' · ')[1].trim();
+  // Park the pointer where the second result will appear: a resting cursor must not steal the
+  // keyboard selection when the list opens under it (Chromium sends a synthetic mouse event).
+  await page.mouse.move(195, 250);
   await page.keyboard.press('Control+k');
   const search = page.getByRole('combobox', { name: 'Search the console' });
   await search.waitFor();
@@ -381,6 +384,16 @@ try {
   console.log(`\nE2E passed (${step} checks)`);
 } catch (e) {
   await page.screenshot({ path: 'e2e-failure.png', fullPage: true }).catch(() => {});
+  // Enough page state in the log to diagnose a CI-only failure without the screenshot.
+  const state = await page
+    .evaluate(() => ({
+      hash: location.hash,
+      h1: [...document.querySelectorAll('h1')].map((h) => h.textContent),
+      options: [...document.querySelectorAll('[role=option]')].map((o) => `${o.getAttribute('aria-selected') === 'true' ? '>' : ' '} ${o.textContent}`),
+      alerts: [...document.querySelectorAll('[role=alert], .toast')].map((a) => a.textContent),
+    }))
+    .catch((x) => ({ error: String(x) }));
+  console.error('Page state at failure:', JSON.stringify(state, null, 1));
   console.error('\nE2E FAILED:', e.message, errors.length ? `\nBrowser errors:\n${errors.join('\n')}` : '');
   process.exitCode = 1;
 } finally {
