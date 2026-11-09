@@ -20,23 +20,40 @@ import { SettingsPage } from './pages/Settings';
 import { SimulatorPage } from './pages/Simulator';
 import { TransparencyPage } from './pages/Transparency';
 import { PrivacyPage } from './pages/Privacy';
-import { DownloadPage } from './pages/Download';
+import { DownloadPage, AppsPage } from './pages/Download';
+import { HelpPage } from './pages/Help';
+import { CommandPalette, type PaletteEntry } from './ui/palette';
 
-type NavItem = { to: string; label: string; icon: string; perm?: Permission; anyOf?: Permission[] };
+type NavItem = { to: string; label: string; icon: string; group: string; perm?: Permission; anyOf?: Permission[]; keywords?: string };
+/** Grouped by what an administrator is trying to do. */
 const NAV: NavItem[] = [
-  { to: '/', label: 'Overview', icon: '◎' },
-  { to: '/devices', label: 'Devices', icon: '▤' },
-  { to: '/compliance', label: 'Compliance', icon: '✓' },
-  { to: '/enrol', label: 'Add devices', icon: '＋', perm: 'enrollment.create' },
-  { to: '/incidents', label: 'Lost & stolen', icon: '⚑' },
-  { to: '/locations', label: 'Locations', icon: '⌖', anyOf: ['location.read', 'location.purge'] },
-  { to: '/employees', label: 'Employees', icon: '☺' },
-  { to: '/users', label: 'Users & access', icon: '⚿', anyOf: ['users.manage', 'sessions.manage'] },
-  { to: '/roles', label: 'Roles', icon: '▦' },
-  { to: '/audit', label: 'Audit log', icon: '⛓', perm: 'audit.read' },
-  { to: '/settings', label: 'Settings', icon: '⚙' },
-  { to: '/simulator', label: 'Device simulator', icon: '▯' },
-  { to: '/privacy', label: 'Privacy & governance', icon: '§' },
+  { group: 'Fleet', to: '/', label: 'Overview', icon: '◎', keywords: 'home dashboard' },
+  { group: 'Fleet', to: '/devices', label: 'Devices', icon: '▤', keywords: 'phones fleet list' },
+  { group: 'Fleet', to: '/enrol', label: 'Add devices', icon: '＋', perm: 'enrollment.create', keywords: 'enrol enroll qr new phone' },
+  { group: 'Fleet', to: '/compliance', label: 'Compliance', icon: '✓', keywords: 'health patch battery issues' },
+  { group: 'Find & recover', to: '/incidents', label: 'Lost & stolen', icon: '⚑', keywords: 'incident tracking lost mode' },
+  { group: 'Find & recover', to: '/locations', label: 'Locations', icon: '⌖', anyOf: ['location.read', 'location.purge'], keywords: 'map locate where ticket' },
+  { group: 'People & access', to: '/employees', label: 'Employees', icon: '☺', keywords: 'staff hr import csv' },
+  { group: 'People & access', to: '/users', label: 'Users & access', icon: '⚿', anyOf: ['users.manage', 'sessions.manage'], keywords: 'admins invite mfa sessions' },
+  { group: 'People & access', to: '/roles', label: 'Roles', icon: '▦', keywords: 'permissions rbac' },
+  { group: 'Governance', to: '/audit', label: 'Audit log', icon: '⛓', perm: 'audit.read', keywords: 'history export verify' },
+  { group: 'Governance', to: '/privacy', label: 'Privacy & governance', icon: '§', keywords: 'gdpr dpia notice' },
+  { group: 'Setup & help', to: '/apps', label: 'Android apps', icon: '⬇', keywords: 'apk download qr install' },
+  { group: 'Setup & help', to: '/settings', label: 'Settings', icon: '⚙', keywords: 'organisation dpo siem password catalogue' },
+  { group: 'Setup & help', to: '/simulator', label: 'Device simulator', icon: '▯', keywords: 'test phone' },
+  { group: 'Setup & help', to: '/help', label: 'Help & guides', icon: '?', keywords: 'how to guide faq support' },
+];
+
+type ActionItem = { to: string; label: string; icon: string; perm?: Permission; keywords?: string };
+const ACTIONS: ActionItem[] = [
+  { to: '/enrol', label: 'Add a device', icon: '＋', perm: 'enrollment.create', keywords: 'enrol qr' },
+  { to: '/devices?unnamed=1', label: 'Name new devices', icon: '✎', perm: 'device.update', keywords: 'unnamed rename assign' },
+  { to: '/devices', label: 'Report a phone lost or stolen', icon: '⚑', perm: 'command.LOST_MODE_ON', keywords: 'incident tracking' },
+  { to: '/locations', label: 'Find a phone’s location', icon: '⌖', perm: 'location.read', keywords: 'locate map' },
+  { to: '/users', label: 'Invite a console user', icon: '⚿', perm: 'users.manage', keywords: 'admin add user' },
+  { to: '/employees', label: 'Import employees (CSV)', icon: '☺', perm: 'employee.manage', keywords: 'hr' },
+  { to: '/audit', label: 'Verify the audit log', icon: '⛓', perm: 'audit.read', keywords: 'hash chain' },
+  { to: '/settings', label: 'Change my password', icon: '⚙', keywords: 'account' },
 ];
 
 function Shell({ children }: { children: ReactNode }) {
@@ -47,6 +64,19 @@ function Shell({ children }: { children: ReactNode }) {
   const [menuOpen, setMenuOpen] = useState(false);
   // Phone menu: close on navigation and on Escape; stop the page scrolling behind it.
   useEffect(() => setMenuOpen(false), [from]);
+  const [searchOpen, setSearchOpen] = useState(false);
+  // Ctrl/⌘ K anywhere, or "/" outside a text field, opens console search.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const typing = e.target instanceof HTMLElement && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName);
+      if ((e.key === 'k' && (e.ctrlKey || e.metaKey)) || (e.key === '/' && !typing)) {
+        e.preventDefault();
+        setSearchOpen(true);
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, []);
   useEffect(() => {
     if (!menuOpen) return;
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setMenuOpen(false);
@@ -70,6 +100,11 @@ function Shell({ children }: { children: ReactNode }) {
       // On a live server the simulator enrols test phones, so only people who can enrol devices see it.
       !(n.to === '/simulator' && rt.mode === 'server' && !can(me.role, 'enrollment.create')),
   );
+  const groups = [...new Set(visible.map((n) => n.group))];
+  const paletteEntries: PaletteEntry[] = [
+    ...ACTIONS.filter((a) => !a.perm || can(me.role, a.perm)).map((a) => ({ id: `act-${a.label}`, group: 'Actions', icon: a.icon, label: a.label, to: a.to, keywords: a.keywords })),
+    ...visible.map((n) => ({ id: `nav-${n.to}`, group: 'Go to', icon: n.icon, label: n.label, hint: n.group, to: n.to, keywords: n.keywords })),
+  ];
   return (
     <div className="shell">
       <a className="skip-link" href="#main">
@@ -101,6 +136,11 @@ function Shell({ children }: { children: ReactNode }) {
             </span>
           )}
         </div>
+        <button type="button" className="search-btn" onClick={() => setSearchOpen(true)} aria-label="Search the console (Ctrl+K)">
+          <span aria-hidden>⌕</span>
+          <span className="search-btn-label">Search devices, people, pages…</span>
+          <kbd className="search-btn-kbd">Ctrl K</kbd>
+        </button>
         <div className="userchip">
           <span className="userchip-name">{me.name}</span>
           <span className="userchip-role">{ROLE_LABEL[me.role]}</span>
@@ -114,13 +154,22 @@ function Shell({ children }: { children: ReactNode }) {
           <strong>{me.name}</strong>
           <span className="muted small">{ROLE_LABEL[me.role]}</span>
         </div>
-        {visible.map((n) => (
-          <NavLink key={n.to} to={n.to} end={n.to === '/'} className={({ isActive }) => `navlink${isActive ? ' active' : ''}`}>
-            <span className="navicon" aria-hidden>
-              {n.icon}
+        {groups.map((g) => (
+          <div className="navgroup" key={g} role="group" aria-label={g}>
+            <span className="navgroup-label" aria-hidden>
+              {g}
             </span>
-            {n.label}
-          </NavLink>
+            {visible
+              .filter((n) => n.group === g)
+              .map((n) => (
+                <NavLink key={n.to} to={n.to} end={n.to === '/'} className={({ isActive }) => `navlink${isActive ? ' active' : ''}`}>
+                  <span className="navicon" aria-hidden>
+                    {n.icon}
+                  </span>
+                  {n.label}
+                </NavLink>
+              ))}
+          </div>
         ))}
         {rt.mode === 'demo' && (
           <button
@@ -142,6 +191,7 @@ function Shell({ children }: { children: ReactNode }) {
       <main className="content" id="main" tabIndex={-1}>
         {children}
       </main>
+      <CommandPalette open={searchOpen} onClose={() => setSearchOpen(false)} pages={paletteEntries} />
     </div>
   );
 }
@@ -172,6 +222,8 @@ export function App() {
         <Route path="/roles" element={guarded(<RolesPage />)} />
         <Route path="/settings" element={guarded(<SettingsPage />)} />
         <Route path="/simulator" element={guarded(<SimulatorPage />)} />
+        <Route path="/apps" element={guarded(<AppsPage />)} />
+        <Route path="/help" element={guarded(<HelpPage />)} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </HashRouter>

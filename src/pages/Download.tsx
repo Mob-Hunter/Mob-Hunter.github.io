@@ -146,3 +146,18 @@ export function DownloadPage() {
     </div>
   );
 }
+
+/** The same downloads inside the console, with the enrolment context administrators need. */
+export function AppsPage() {
+  return (
+    <div className="page">
+      <h1>Android apps</h1>
+      <p className="muted">Scan a code with the phone&apos;s camera to download, or share this page.</p>
+      <div className="callout">
+        <strong>Enrolling a phone?</strong> You do not need to download anything first: <Link to="/enrol">Add devices</Link> gives you one QR code that installs
+        the agent and enrols the phone.
+      </div>
+      <ApkDownloads />
+    </div>
+  );
+}

@@ -50,7 +50,10 @@ export function IncidentsPage() {
       </div>
       {err && <ErrorBox>{err}</ErrorBox>}
       <Card title={`Open incidents (${open.length})`}>
-        {open.length ? <IncidentList items={open} now={now} /> : <Empty>No device is currently reported lost or stolen.</Empty>}
+        {open.length ? <IncidentList items={open} now={now} /> : <Empty>
+            No device is currently reported lost or stolen. To report one, open it from <Link to="/devices">Devices</Link> and use{' '}
+            <em>Report lost or stolen</em>. <Link to="/help">Guide</Link>
+          </Empty>}
       </Card>
       <Card title="Closed incidents">{closed.length ? <IncidentList items={closed} now={now} /> : <Empty>None yet.</Empty>}</Card>
     </div>
