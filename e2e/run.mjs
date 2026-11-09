@@ -333,14 +333,18 @@ try {
 
   // Console search: Ctrl+K finds a device by serial and opens it; the Help page filters its guides.
   await go('Devices');
-  const firstSerial = (await page.locator('.device-list .device-main .small').first().textContent()).split(' · ')[1].trim();
+  // Pick a named, active device and find it by its serial number.
+  const row = page.locator('.device-list li:not(.unnamed)').first();
+  const deviceName = (await row.locator('.device-name').textContent()).trim();
+  const serial = (await row.locator('.device-main .small').textContent()).split(' · ')[1].trim();
   await page.keyboard.press('Control+k');
   const search = page.getByRole('combobox', { name: 'Search the console' });
   await search.waitFor();
-  await search.fill(firstSerial);
-  await page.getByRole('option').first().waitFor();
+  await search.fill(serial);
+  await page.getByRole('option', { name: new RegExp(deviceName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')) }).first().waitFor();
   await page.keyboard.press('Enter');
-  await page.waitForURL(/#\/devices\/dev_/);
+  await page.getByRole('heading', { name: deviceName, level: 1 }).waitFor();
+  assert.match(await page.evaluate(() => location.hash), /^#\/devices\/dev_/);
   await page.keyboard.press('Control+k');
   await search.fill('help');
   await page.getByRole('option', { name: /Help & guides/ }).click();
