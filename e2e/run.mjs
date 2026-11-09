@@ -92,6 +92,9 @@ try {
   const qr = await page.getByAltText('Device-owner provisioning QR code').evaluate((img) => ({ ok: img.complete && img.naturalWidth > 0, w: img.getBoundingClientRect().width }));
   assert.ok(qr.ok, 'provisioning QR image failed to load');
   assert.ok(qr.w >= 300, `provisioning QR too small to scan: ${qr.w}px`);
+  // Personal / test phones get a second QR (mobhunter://enrol link) for enrolment without a factory reset.
+  const personal = page.getByAltText('Enrolment QR for a phone without a factory reset');
+  assert.equal(await personal.evaluate((img) => img.complete && img.naturalWidth > 0), true);
   const installUrl = await page.getByLabel('Install page (share with the person enrolling)').inputValue();
   assert.match(installUrl, /#\/e\/[A-Za-z0-9_-]{20,}$/);
   ok('enrolment minted: QR + install link rendered');

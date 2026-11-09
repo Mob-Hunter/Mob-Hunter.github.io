@@ -1,5 +1,5 @@
 import { useParams, Link } from 'react-router-dom';
-import { Badge, Card, ErrorBox, QrImage, usePublicQuery, useRuntime } from '../ui/kit';
+import { Card, ErrorBox, QrImage, usePublicQuery, useRuntime } from '../ui/kit';
 import { COLLECTION_NOTICE } from '../core/enrollment';
 
 /** GET /e/{token}: public install page. Works without signing in. */
@@ -48,10 +48,23 @@ export function InstallPage() {
               </p>
               <p className="small">{COLLECTION_NOTICE.retention}</p>
             </Card>
-            <Card title={<>Sideload APK <Badge tone="warn">testing only</Badge></>}>
-              <p className="small">
-                Installing from this link gives an ordinary app <strong>without</strong> device-owner rights. It cannot enforce policy and is only for
-                developer testing: <code className="break">{q.data.sideloadApkUrl}</code>
+            <Card title="Using your own phone? (no factory reset)">
+              <ol className="steps">
+                <li>
+                  Install the Mob Hunter device agent:{' '}
+                  <a href={q.data.sideloadApkUrl} download>
+                    download the app
+                  </a>
+                  .
+                </li>
+                <li>Come back to this page on the phone and tap the button below. The app opens and enrols the phone.</li>
+              </ol>
+              <a className="btn btn-primary" href={q.data.standardLink}>
+                Open in the Mob Hunter app
+              </a>
+              <p className="small muted">
+                Your organisation then sees device health and — only when it asks against a ticket, with a notification every time — the phone&apos;s location. It
+                cannot wipe the phone, read your data or install apps.
               </p>
             </Card>
           </>

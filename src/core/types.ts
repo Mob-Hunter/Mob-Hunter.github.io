@@ -125,6 +125,24 @@ export interface Device {
   /** random key embedded in on-device notifications; lets the employee open their own transparency page */
   transparencyKey: string;
   enrollmentTokenId: string;
+  /**
+   * How the phone was enrolled. 'device_owner': factory reset + provisioning QR (full management).
+   * 'standard': agent installed on an existing phone without a factory reset — notifications,
+   * location and telemetry only; policy, wipe, reboot and silent installs are unavailable.
+   */
+  managementMode?: ManagementMode;
+  /** What the agent reports it can do right now (permissions the user granted). */
+  capabilities?: DeviceCapabilities | null;
+}
+
+export type ManagementMode = 'device_owner' | 'standard';
+
+export interface DeviceCapabilities {
+  deviceOwner: boolean;
+  /** device admin active: allows remote lock on a standard enrolment */
+  deviceAdmin: boolean;
+  notifications: boolean;
+  location: 'none' | 'foreground' | 'background';
 }
 
 export interface EnrollmentToken {

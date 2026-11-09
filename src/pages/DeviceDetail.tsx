@@ -1,3 +1,4 @@
+import { unsupportedReason } from '../core/backend';
 import { useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Badge, Card, Empty, ErrorBox, Field, fmtAgo, fmtTime, useAction, useCan, useMe, useQuery, useRuntime, TableWrap } from '../ui/kit';
@@ -31,7 +32,10 @@ export function DeviceDetailPage() {
   if (err && !device) return <ErrorBox>{err}</ErrorBox>;
   if (!device) return null;
   // RELEASE is only sent by the delete flow, never from the generic command form.
-  const allowed = COMMAND_TYPES.filter((t) => t !== 'RELEASE' && can(me.role, `command.${t}`));
+  const permitted = COMMAND_TYPES.filter((t) => t !== 'RELEASE' && can(me.role, `command.${t}`));
+  // A phone enrolled without a factory reset cannot be wiped, rebooted or sent silent installs.
+  const allowed = permitted.filter((t) => !unsupportedReason(device, t));
+  const unavailable = permitted.filter((t) => unsupportedReason(device, t));
 
   return (
     <div className="page">
@@ -71,6 +75,30 @@ export function DeviceDetailPage() {
             </dd>
             <dt>Enrolled</dt>
             <dd>{fmtTime(device.enrolledAt)}</dd>
+            <dt>Enrolment type</dt>
+            <dd>
+              {device.managementMode === 'standard' ? (
+                <>
+                  <Badge tone="info">Standard</Badge> existing phone, no factory reset
+                </>
+              ) : (
+                <>
+                  <Badge tone="ok">Company device</Badge> fully managed (device owner)
+                </>
+              )}
+            </dd>
+            {device.capabilities && (
+              <>
+                <dt>Allowed on the phone</dt>
+                <dd className="cap-list">
+                  <Badge tone={device.capabilities.notifications ? 'ok' : 'warn'}>Notifications {device.capabilities.notifications ? 'on' : 'off'}</Badge>{' '}
+                  <Badge tone={device.capabilities.location === 'background' ? 'ok' : device.capabilities.location === 'foreground' ? 'info' : 'warn'}>
+                    Location {device.capabilities.location === 'background' ? 'all the time' : device.capabilities.location === 'foreground' ? 'while open' : 'off'}
+                  </Badge>{' '}
+                  {!device.capabilities.deviceOwner && <Badge tone={device.capabilities.deviceAdmin ? 'ok' : 'neutral'}>Remote lock {device.capabilities.deviceAdmin ? 'on' : 'off'}</Badge>}
+                </dd>
+              </>
+            )}
             <dt>Last check-in</dt>
             <dd>{fmtAgo(device.lastCheckinAt)}</dd>
             <dt>Notice acknowledged</dt>
@@ -114,6 +142,11 @@ export function DeviceDetailPage() {
           <CommandForm deviceId={device.id} allowed={allowed} disabled={device.state === 'wiped'} />
         ) : (
           <p className="muted">Your role cannot send commands to devices.</p>
+        )}
+        {unavailable.length > 0 && (
+          <p className="small muted">
+            Not available on this phone: {unavailable.join(', ')}. {unsupportedReason(device, unavailable[0])}
+          </p>
         )}
         <h3>History</h3>
         {commands?.length ? (

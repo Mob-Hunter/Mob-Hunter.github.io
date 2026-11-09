@@ -23,7 +23,7 @@
         android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="false"
-        android:icon="@drawable/ic_stat_managed"
+        android:icon="@drawable/ic_launcher"
         android:label="@string/app_name"
         android:supportsRtl="true"
         android:usesCleartextTraffic="false"
@@ -51,7 +51,29 @@
             </intent-filter>
         </receiver>
 
-        <!-- Android 10+ provisioning (QR): no launcher activity is registered anywhere. -->
+        <!--
+          Launcher + enrolment link handler. Company phones are still provisioned by QR during setup
+          (device owner); this screen enrols an existing phone without a factory reset ("standard"
+          enrolment) and shows the status and permissions afterwards.
+        -->
+        <activity
+            android:name=".SetupActivity"
+            android:exported="true"
+            android:label="@string/launcher_name"
+            android:launchMode="singleTask">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="mobhunter" android:host="enrol" />
+            </intent-filter>
+        </activity>
+
+        <!-- Android 10+ provisioning (QR). -->
         <activity
             android:name=".ProvisioningModeActivity"
             android:exported="true"

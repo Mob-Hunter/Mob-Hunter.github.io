@@ -12,7 +12,7 @@ export function EnrolPage() {
   const now = useNow(1000);
   const [note, setNote] = useState('');
   const [ssid, setSsid] = useState('');
-  const [minted, setMinted] = useState<{ token: string; expiresAt: number; provisioning: ProvisioningPayload; sideloadApkUrl: string } | null>(null);
+  const [minted, setMinted] = useState<{ token: string; expiresAt: number; provisioning: ProvisioningPayload; sideloadApkUrl: string; standardLink: string } | null>(null);
   const [tokens] = useQuery((api) => api.listEnrollments());
   const [unnamed] = useQuery((api) => api.listDevices({ unnamedOnly: true }));
   const { run, busy } = useAction();
@@ -101,13 +101,36 @@ export function EnrolPage() {
                   <summary className="small">Raw provisioning payload</summary>
                   <pre className="code">{JSON.stringify(minted.provisioning, null, 2)}</pre>
                 </details>
-                <p className="small">
-                  <Badge tone="warn">Testing only</Badge> Sideload APK (not device owner):{' '}
-                  <code className="break">{minted.sideloadApkUrl}</code>
-                </p>
               </div>
             </div>
           )}
+        </Card>
+      )}
+      {minted && left > 0 && (
+        <Card title="Personal or test phone (no factory reset)">
+          <div className="enrol-grid">
+            <div className="qr-box">
+              <QrImage size="lg" text={minted.standardLink} label="Enrolment QR for a phone without a factory reset" />
+              <span className="small muted">Scan with the phone&apos;s camera app</span>
+            </div>
+            <div className="stack">
+              <ol className="steps">
+                <li>
+                  On the phone, install the <strong>Mob Hunter device agent</strong> (<Link to="/download">Android apps</Link>).
+                </li>
+                <li>Open the phone&apos;s camera and scan this code. The Mob Hunter app opens and enrols the phone.</li>
+                <li>Allow notifications and location (choose “Allow all the time”), then read the notice and tap “I understand”.</li>
+                <li>The phone appears below within a minute.</li>
+              </ol>
+              <p className="small muted">
+                Uses the same one-time token as the company-device QR above, so only one of the two can be used. The organisation sees health and, only against a
+                ticket, location; it cannot wipe the phone, reboot it, install apps or enforce policy.
+              </p>
+              <Field label="Or paste this link into the Mob Hunter app">
+                <input readOnly value={installUrl(minted.token)} onFocus={(e) => e.currentTarget.select()} />
+              </Field>
+            </div>
+          </div>
         </Card>
       )}
 
