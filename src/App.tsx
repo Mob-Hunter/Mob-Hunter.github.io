@@ -23,6 +23,7 @@ import { PrivacyPage } from './pages/Privacy';
 import { DownloadPage, AppsPage } from './pages/Download';
 import { HelpPage } from './pages/Help';
 import { CommandPalette, type PaletteEntry } from './ui/palette';
+import { getTheme, setTheme, type Theme } from './ui/theme';
 
 type NavItem = { to: string; label: string; icon: string; group: string; perm?: Permission; anyOf?: Permission[]; keywords?: string };
 /** Grouped by what an administrator is trying to do. */
@@ -141,6 +142,7 @@ function Shell({ children }: { children: ReactNode }) {
           <span className="search-btn-label">Search devices, people, pages…</span>
           <kbd className="search-btn-kbd">Ctrl K</kbd>
         </button>
+        <ThemeToggle />
         <div className="userchip">
           <span className="userchip-name">{me.name}</span>
           <span className="userchip-role">{ROLE_LABEL[me.role]}</span>
@@ -241,5 +243,24 @@ function PrivacyGate() {
     <div className="public-page">
       <PrivacyPage />
     </div>
+  );
+}
+
+function ThemeToggle() {
+  const [theme, set] = useState<Theme>(getTheme);
+  const next: Theme = theme === 'dark' ? 'light' : 'dark';
+  return (
+    <button
+      type="button"
+      className="btn btn-ghost btn-sm theme-btn"
+      onClick={() => {
+        setTheme(next);
+        set(next);
+      }}
+      aria-label={`Switch to ${next} theme`}
+      title={`Switch to ${next} theme`}
+    >
+      <span aria-hidden>{theme === 'dark' ? '☀' : '☾'}</span>
+    </button>
   );
 }

@@ -6,6 +6,9 @@ import { RuntimeProvider, ToastHost } from './ui/kit';
 import { isOffServer } from './config';
 import { Landing } from './pages/Landing';
 import './styles.css';
+import { applyTheme } from './ui/theme';
+
+applyTheme();
 
 // Boot once even if React StrictMode runs effects twice in development.
 let booting: Promise<Runtime> | null = null;
