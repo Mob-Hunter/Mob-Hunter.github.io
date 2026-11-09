@@ -188,11 +188,13 @@ try {
   assert.ok((await page.locator('table tbody tr', { hasText: 'INC-1001' }).count()) >= 2);
   ok('Locations workspace: seeded ticket INC-1001 shows fleet map, latest position per device and history');
 
-  // Lost / stolen incident with active tracking
-  await go('Devices');
-  await page.getByRole('heading', { name: 'Devices', exact: true }).waitFor();
-  await page.getByRole('link', { name: "Nimal's field phone" }).click();
-  await page.getByRole('heading', { name: 'Report lost or stolen' }).waitFor();
+  // Lost / stolen incident with active tracking — the guided flow from Lost & stolen
+  await go(/Lost & stolen/);
+  await page.getByRole('link', { name: /Report a lost or stolen phone/ }).click();
+  await page.getByRole('heading', { name: 'Report a lost or stolen phone' }).waitFor();
+  await page.getByLabel('Search phones').fill('Nimal');
+  await page.locator('.pick', { hasText: "Nimal's field phone" }).click();
+  await page.getByRole('heading', { name: '2 · What happened?' }).waitFor();
   await page.getByLabel('Report as').selectOption('stolen');
   await page.getByLabel('Incident ticket').fill('INC-3001');
   await page.getByLabel('Tracking interval').selectOption('60');
@@ -203,14 +205,14 @@ try {
   await page.getByText(/Tracking every 1 min/).first().waitFor();
   await page.getByText('Stolen device:').waitFor();
   await page.getByRole('img', { name: /Live track with \d+ location fixes/ }).waitFor({ timeout: 30_000 });
+  assert.equal(await page.locator('.flow li[aria-current="step"] strong').textContent(), 'Follow live');
   await go(/Lost & stolen/);
   await page.getByRole('heading', { name: /Open incidents \(1\)/ }).waitFor();
   await page.getByRole('link', { name: "Nimal's field phone" }).click();
-  await page.getByLabel('Outcome').selectOption('recovered');
-  await page.getByRole('button', { name: 'Close incident' }).click();
+  await page.getByRole('button', { name: /Recovered/ }).click();
   await page.locator('.toast-ok', { hasText: 'Lost Mode ended' }).waitFor();
   await page.getByText(/Closed as/).waitFor({ timeout: 20_000 });
-  ok('stolen report → live tracking page with map → listed under Lost & stolen → closed as recovered');
+  ok('guided report (pick phone → form) → live tracking with step tracker → one-click close as recovered');
   await signOut();
 
   // Audit chain verifies
@@ -331,14 +333,21 @@ try {
 
   // Console search: Ctrl+K finds a device by serial and opens it; the Help page filters its guides.
   await go('Devices');
-  const firstSerial = (await page.locator('.device-list .device-main .small').first().textContent()).split(' · ')[1].trim();
+  // Pick a named, active device and find it by its serial number.
+  const row = page.locator('.device-list li:not(.unnamed)').first();
+  const deviceName = (await row.locator('.device-name').textContent()).trim();
+  const serial = (await row.locator('.device-main .small').textContent()).split(' · ')[1].trim();
+  // Park the pointer where the second result will appear: a resting cursor must not steal the
+  // keyboard selection when the list opens under it (Chromium sends a synthetic mouse event).
+  await page.mouse.move(195, 250);
   await page.keyboard.press('Control+k');
   const search = page.getByRole('combobox', { name: 'Search the console' });
   await search.waitFor();
-  await search.fill(firstSerial);
-  await page.getByRole('option').first().waitFor();
+  await search.fill(serial);
+  await page.getByRole('option', { name: new RegExp(deviceName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')) }).first().waitFor();
   await page.keyboard.press('Enter');
-  await page.waitForURL(/#\/devices\/dev_/);
+  await page.getByRole('heading', { name: deviceName, level: 1 }).waitFor();
+  assert.match(await page.evaluate(() => location.hash), /^#\/devices\/dev_/);
   await page.keyboard.press('Control+k');
   await search.fill('help');
   await page.getByRole('option', { name: /Help & guides/ }).click();
@@ -375,6 +384,16 @@ try {
   console.log(`\nE2E passed (${step} checks)`);
 } catch (e) {
   await page.screenshot({ path: 'e2e-failure.png', fullPage: true }).catch(() => {});
+  // Enough page state in the log to diagnose a CI-only failure without the screenshot.
+  const state = await page
+    .evaluate(() => ({
+      hash: location.hash,
+      h1: [...document.querySelectorAll('h1')].map((h) => h.textContent),
+      options: [...document.querySelectorAll('[role=option]')].map((o) => `${o.getAttribute('aria-selected') === 'true' ? '>' : ' '} ${o.textContent}`),
+      alerts: [...document.querySelectorAll('[role=alert], .toast')].map((a) => a.textContent),
+    }))
+    .catch((x) => ({ error: String(x) }));
+  console.error('Page state at failure:', JSON.stringify(state, null, 1));
   console.error('\nE2E FAILED:', e.message, errors.length ? `\nBrowser errors:\n${errors.join('\n')}` : '');
   process.exitCode = 1;
 } finally {

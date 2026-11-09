@@ -17,12 +17,9 @@ export function CommandPalette({ open, onClose, pages }: { open: boolean; onClos
   const [employees] = useQuery((api) => api.listEmployees(), [open], { enabled: open, live: false });
   const [users] = useQuery((api) => api.listUsers(), [open], { enabled: open, live: false });
 
-  useEffect(() => {
-    if (!open) return;
-    setQ('');
-    setActive(0);
-    requestAnimationFrame(() => input.current?.focus());
-  }, [open]);
+  // Mounted fresh each time it opens (see App), so it starts empty with no reset effect that could
+  // race with fast typing; the input is focused on mount.
+  useEffect(() => input.current?.focus(), []);
 
   const results = useMemo(() => {
     const all: PaletteEntry[] = [
@@ -49,6 +46,8 @@ export function CommandPalette({ open, onClose, pages }: { open: boolean; onClos
       .slice(0, 40);
   }, [q, pages, devices, employees, users]);
 
+  // Typing resets the highlight to the best match. The pointer only changes it when it really moves
+  // (onMouseMove): a list opening under a resting cursor must not steal the keyboard selection.
   useEffect(() => setActive(0), [q]);
   if (!open) return null;
 
@@ -103,7 +102,7 @@ export function CommandPalette({ open, onClose, pages }: { open: boolean; onClos
                   role="option"
                   aria-selected={i === active}
                   className={`palette-item${i === active ? ' active' : ''}`}
-                  onMouseEnter={() => setActive(i)}
+                  onMouseMove={() => i !== active && setActive(i)}
                   onClick={() => go(x)}
                 >
                   <span className="palette-icon" aria-hidden>

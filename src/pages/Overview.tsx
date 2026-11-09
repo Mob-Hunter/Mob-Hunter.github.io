@@ -1,102 +1,297 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { Badge, Card, Empty, fmtAgo, useMe, useQuery } from '../ui/kit';
+import { Badge, Card, Empty, fmtAgo, useMe, useNow, useQuery } from '../ui/kit';
 import { ROLE_LABEL, can, type Role } from '../core/rbac';
 import { DOWNLOADS_URL } from '../config';
 
 export function OverviewPage() {
   const me = useMe()!;
+  const now = useNow(30_000);
   const [stats] = useQuery((api) => api.stats());
-  const [wakes] = useQuery(async (api) => (await api.pushLog()).slice(0, 6));
-  const [cmds] = useQuery(async (api) => (await api.listCommands()).slice(0, 6));
   const [devices] = useQuery((api) => api.listDevices());
+  const [compliance] = useQuery((api) => api.compliance());
+  const [incidents] = useQuery((api) => api.listIncidents());
+  const [cmds] = useQuery((api) => api.listCommands());
+  const canAudit = can(me.role, 'audit.read');
+  const [audit] = useQuery((api) => api.listAudit(), [], { enabled: canAudit });
   const name = (id: string) => devices?.find((d) => d.id === id)?.displayName ?? id;
 
+  const active = (devices ?? []).filter((d) => d.state !== 'retired' && d.state !== 'wiped');
+  const issuesById = new Map((compliance ?? []).map((c) => [c.deviceId, c.issues]));
+  const health = { healthy: 0, warn: 0, critical: 0 };
+  for (const d of active) {
+    const iss = issuesById.get(d.id) ?? [];
+    if (iss.some((x) => x.severity === 'bad')) health.critical++;
+    else if (iss.length) health.warn++;
+    else health.healthy++;
+  }
+  const score = active.length ? Math.round((health.healthy / active.length) * 100) : 100;
+  const fresh = bucket(active, (d) => {
+    const age = d.lastCheckinAt ? now - d.lastCheckinAt : Infinity;
+    return age < 15 * 60_000 ? 0 : age < 3_600_000 ? 1 : age < 86_400_000 ? 2 : 3;
+  }, 4);
+  const battery = bucket(active.filter((d) => d.telemetry), (d) => {
+    const b = d.telemetry!.batteryLevel;
+    return b < 20 ? 0 : b < 50 ? 1 : b < 80 ? 2 : 3;
+  }, 4);
+  const issueCounts = new Map<string, { text: string; n: number; severity: string }>();
+  for (const c of compliance ?? [])
+    for (const x of c.issues) {
+      const cur = issueCounts.get(x.code) ?? { text: ISSUE_LABEL[x.code] ?? x.code, n: 0, severity: x.severity };
+      cur.n++;
+      if (x.severity === 'bad') cur.severity = 'bad';
+      issueCounts.set(x.code, cur);
+    }
+  const attention = (compliance ?? [])
+    .filter((c) => c.issues.length)
+    .sort((a, b) => rank(b.issues) - rank(a.issues))
+    .slice(0, 6);
+  const openIncidents = (incidents ?? []).filter((i) => i.status === 'active');
+  const approvals = (cmds ?? []).filter((c) => c.status === 'pending_approval');
+  const dayAgo = now - 86_400_000;
+  const locates24h = (cmds ?? []).filter((c) => (c.type === 'LOCATE' || c.type === 'LOST_MODE_ON') && c.issuedAt > dayAgo).length;
+  const feed: { at: number; text: ReactNode; tone: string }[] = canAudit
+    ? (audit ?? []).slice(-8).reverse().map((r) => ({ at: r.at, tone: toneOf(r.action), text: <><code>{r.action}</code> · {r.actorRole === 'DEVICE' ? name(r.actor) : r.actor === 'system' ? 'system' : (r.actorRole ?? '').replace('_', ' ').toLowerCase()}{r.ticket ? ` · ${r.ticket}` : ''}</> }))
+    : (cmds ?? []).slice(0, 8).map((c) => ({ at: c.issuedAt, tone: c.status === 'succeeded' ? 'ok' : c.status === 'failed' || c.status === 'rejected' ? 'bad' : 'info', text: <><code>{c.type}</code> → {name(c.deviceId)} · {c.status.replace('_', ' ')}</> }));
+
   return (
-    <div className="page">
-      <h1>Overview</h1>
-      <p className="muted">
-        {greeting()}, <strong>{me.name.split(' ')[0]}</strong> · {ROLE_LABEL[me.role]}
-      </p>
-      <QuickActions role={me.role} />
-      <GettingStarted role={me.role} devices={devices?.length ?? null} />
-      {stats && (
-        <div className="stats">
-          <Link to="/devices" className="stat">
-            <span className="stat-n">{stats.total}</span>
-            <span className="stat-l">Devices</span>
-          </Link>
-          <Link to="/devices?unnamed=1" className="stat">
-            <span className="stat-n">{stats.unnamed}</span>
-            <span className="stat-l">Unnamed</span>
-          </Link>
-          <div className="stat">
-            <span className="stat-n">{stats.online}</span>
-            <span className="stat-l">Seen &lt;15 min</span>
-          </div>
-          <Link to="/devices?tab=pending" className="stat">
-            <span className="stat-n">{stats.awaitingAck}</span>
-            <span className="stat-l">Awaiting notice ack</span>
-          </Link>
-          <Link to="/incidents" className="stat">
-            <span className="stat-n">{stats.lost}</span>
-            <span className="stat-l">Lost / stolen</span>
-          </Link>
-          <div className="stat">
-            <span className="stat-n">{stats.pendingApprovals}</span>
-            <span className="stat-l">Awaiting approval</span>
-          </div>
+    <div className="page dash">
+      <header className="dash-head">
+        <div>
+          <p className="dash-eyebrow">Command center</p>
+          <h1>Overview</h1>
+          <p className="muted">
+            {greeting()}, <strong>{me.name.split(' ')[0]}</strong> · {ROLE_LABEL[me.role]} · updated {fmtAgo(now)}
+          </p>
         </div>
+        <QuickActions role={me.role} />
+      </header>
+      <GettingStarted role={me.role} devices={devices?.length ?? null} />
+
+      {stats && (
+        <section className="kpis" aria-label="Key numbers">
+          <Kpi to="/devices" label="Devices" value={stats.total} sub={`${active.length} active`} />
+          <Kpi to="/devices" label="Online now" value={stats.online} sub={pct(stats.online, active.length)} meter={ratio(stats.online, active.length)} />
+          <Kpi to="/compliance" label="Compliance" value={`${score}%`} sub={`${health.critical + health.warn} with issues`} meter={score / 100} tone={score >= 90 ? 'ok' : score >= 70 ? 'warn' : 'bad'} />
+          <Kpi to="/incidents" label="Lost / stolen" value={openIncidents.length} sub={openIncidents.length ? 'tracking now' : 'none open'} tone={openIncidents.length ? 'bad' : undefined} />
+          <Kpi to="/devices?tab=pending" label="Needs action" value={stats.unnamed + stats.awaitingAck + stats.pendingApprovals} sub={`${stats.unnamed} unnamed · ${stats.awaitingAck} notice · ${stats.pendingApprovals} approval`} tone={stats.unnamed + stats.awaitingAck + stats.pendingApprovals ? 'warn' : undefined} />
+          <Kpi to={can(me.role, 'location.read') ? '/locations' : '/audit'} label="Location requests" value={locates24h} sub="last 24 h · all audited" />
+        </section>
       )}
-      <div className="grid2">
-        <Card title="Recent commands">
-          {cmds?.length ? (
-            <ul className="list">
-              {cmds.map((c) => (
+
+      <section className="dash-grid">
+        <Panel title="Fleet health" className="span-2">
+          <div className="health">
+            <Ring
+              parts={[
+                { v: health.healthy, c: 'var(--ok)', label: 'Healthy' },
+                { v: health.warn, c: 'var(--warn)', label: 'Warnings' },
+                { v: health.critical, c: 'var(--bad)', label: 'Critical' },
+              ]}
+              center={`${score}%`}
+              caption="compliant"
+            />
+            <ul className="legend">
+              <LegendRow color="var(--ok)" label="Healthy" n={health.healthy} />
+              <LegendRow color="var(--warn)" label="Warnings" n={health.warn} />
+              <LegendRow color="var(--bad)" label="Critical" n={health.critical} />
+            </ul>
+          </div>
+        </Panel>
+        <Panel title="Check-in freshness">
+          <Bars rows={[['< 15 min', fresh[0], 'ok'], ['< 1 hour', fresh[1], 'info'], ['< 24 hours', fresh[2], 'warn'], ['Older / never', fresh[3], 'bad']]} total={active.length} />
+        </Panel>
+        <Panel title="Battery">
+          <Bars rows={[['Below 20%', battery[0], 'bad'], ['20–49%', battery[1], 'warn'], ['50–79%', battery[2], 'info'], ['80–100%', battery[3], 'ok']]} total={battery.reduce((a, b) => a + b, 0)} />
+        </Panel>
+
+        <Panel title="Needs attention" action={<Link to="/compliance">Compliance →</Link>} className="span-2">
+          {attention.length ? (
+            <ul className="attn">
+              {attention.map((c) => (
+                <li key={c.deviceId}>
+                  <span className={`dot dot-${c.issues.some((x) => x.severity === 'bad') ? 'bad' : 'warn'}`} aria-hidden />
+                  <Link to={`/devices/${c.deviceId}`}>{c.deviceName}</Link>
+                  <span className="muted small">{c.issues.map((x) => ISSUE_LABEL[x.code] ?? x.code).join(' · ')}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <Empty>{active.length ? 'Every active device is healthy.' : 'No devices yet — add your first phone.'}</Empty>
+          )}
+        </Panel>
+        <Panel title="Issues by type">
+          {issueCounts.size ? (
+            <Bars rows={[...issueCounts.values()].sort((a, b) => b.n - a.n).map((x) => [x.text, x.n, x.severity === 'bad' ? 'bad' : 'warn'] as const)} total={active.length} />
+          ) : (
+            <Empty>No open issues.</Empty>
+          )}
+        </Panel>
+        <Panel title="Lost & stolen" action={<Link to={openIncidents.length ? '/incidents' : '/incidents/new'}>{openIncidents.length ? 'Open →' : 'Report →'}</Link>}>
+          {openIncidents.length ? (
+            <ul className="attn">
+              {openIncidents.slice(0, 4).map((i) => (
+                <li key={i.id}>
+                  <span className="dot dot-bad pulse" aria-hidden />
+                  <Link to={`/incidents/${i.id}`}>{i.deviceName}</Link>
+                  <span className="muted small">
+                    {i.kind} · {i.ticket} · last fix {fmtAgo(i.lastFixAt)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <Empty>No phone is reported lost or stolen.</Empty>
+          )}
+        </Panel>
+
+        <Panel title="Waiting for approval">
+          {approvals.length ? (
+            <ul className="attn">
+              {approvals.slice(0, 5).map((c) => (
                 <li key={c.id}>
+                  <span className="dot dot-warn" aria-hidden />
                   <Link to={`/devices/${c.deviceId}`}>
-                    <strong>{c.type}</strong> → {name(c.deviceId)}
+                    {c.type} → {name(c.deviceId)}
                   </Link>
-                  <span>
-                    <StatusBadge status={c.status} /> <span className="muted small">{fmtAgo(c.issuedAt)}</span>
+                  <span className="muted small">
+                    {c.ticket ?? ''} · {fmtAgo(c.issuedAt)}
                   </span>
                 </li>
               ))}
             </ul>
           ) : (
-            <Empty>No commands yet.</Empty>
+            <Empty>Nothing is waiting for a second approver.</Empty>
           )}
-        </Card>
-        <Card title="Recent device wake-ups">
-          {wakes?.length ? (
-            <ul className="list">
-              {wakes.map((w) => (
-                <li key={w.id}>
-                  <span>
-                    Wake <strong>{name(w.deviceId)}</strong> <span className="muted small">({w.reason})</span>
-                  </span>
-                  <span className="muted small">{fmtAgo(w.at)}</span>
+        </Panel>
+        <Panel title={canAudit ? 'Live activity (audit log)' : 'Recent commands'} action={canAudit ? <Link to="/audit">Audit log →</Link> : undefined} className="span-3">
+          {feed.length ? (
+            <ol className="feed">
+              {feed.map((f, k) => (
+                <li key={k}>
+                  <span className={`dot dot-${f.tone}`} aria-hidden />
+                  <span className="feed-text">{f.text}</span>
+                  <span className="muted tiny nowrap">{fmtAgo(f.at)}</span>
                 </li>
               ))}
-            </ul>
+            </ol>
           ) : (
-            <Empty>No wakes sent yet. Wakes carry no command data — the device pulls over its authenticated channel.</Empty>
+            <Empty>No activity yet.</Empty>
           )}
-        </Card>
-      </div>
-      <Card title="What you can do with this role">
-        <ul className="checklist">
-          <li className={can(me.role, 'enrollment.create') ? 'yes' : 'no'}>Enrol new devices and rename / assign them</li>
-          <li className={can(me.role, 'command.LOCK') ? 'yes' : 'no'}>Lock, reboot, sync policy</li>
-          <li className={can(me.role, 'command.WIPE') ? 'yes' : 'no'}>Request a wipe (needs a second approver)</li>
-          <li className={can(me.role, 'command.LOCATE') ? 'yes' : 'no'}>Locate a device / Lost Mode (ticket required)</li>
-          <li className={can(me.role, 'location.read') ? 'yes' : 'no'}>View location results</li>
-          <li className={can(me.role, 'audit.read') ? 'yes' : 'no'}>Read and verify the audit log</li>
-          <li className={can(me.role, 'roles.manage') ? 'yes' : 'no'}>Manage roles</li>
-        </ul>
-        <p className="tiny muted">These checks are enforced by the backend on every call; the menu only hides what you cannot use.</p>
-      </Card>
+        </Panel>
+      </section>
     </div>
+  );
+}
+
+const ISSUE_LABEL: Record<string, string> = {
+  not_acknowledged: 'Notice not acknowledged',
+  stale_checkin: 'Not seen recently',
+  never_checked_in: 'Never checked in',
+  low_battery: 'Low battery',
+  integrity: 'Integrity check',
+  old_patch: 'Old security patch',
+  low_storage: 'Low storage',
+  unassigned: 'Not assigned',
+};
+
+function rank(issues: { severity: string }[]) {
+  return issues.reduce((a, x) => a + (x.severity === 'bad' ? 10 : 1), 0);
+}
+function bucket<T>(items: T[], f: (x: T) => number, n: number): number[] {
+  const out = new Array(n).fill(0);
+  for (const x of items) out[f(x)]++;
+  return out;
+}
+const ratio = (a: number, b: number) => (b ? a / b : 0);
+const pct = (a: number, b: number) => (b ? `${Math.round((a / b) * 100)}% of active` : '—');
+function toneOf(action: string) {
+  if (action.startsWith('security') || action === 'access.denied' || action.endsWith('failed')) return 'bad';
+  if (action.startsWith('location') || action.startsWith('incident')) return 'warn';
+  if (action.startsWith('device') || action.startsWith('command')) return 'info';
+  return 'ok';
+}
+
+function Kpi({ to, label, value, sub, meter, tone }: { to: string; label: string; value: ReactNode; sub: string; meter?: number; tone?: string }) {
+  return (
+    <Link to={to} className={`kpi${tone ? ` kpi-${tone}` : ''}`}>
+      <span className="kpi-label">{label}</span>
+      <span className="kpi-value">{value}</span>
+      {meter !== undefined && (
+        <span className="kpi-meter" aria-hidden>
+          <span style={{ width: `${Math.round(Math.min(1, Math.max(0, meter)) * 100)}%` }} />
+        </span>
+      )}
+      <span className="kpi-sub" title={sub}>
+        {sub}
+      </span>
+    </Link>
+  );
+}
+
+function Panel({ title, action, className = '', children }: { title: string; action?: ReactNode; className?: string; children: ReactNode }) {
+  return (
+    <section className={`card panel ${className}`} aria-label={title}>
+      <header className="panel-head">
+        <h2>{title}</h2>
+        {action}
+      </header>
+      {children}
+    </section>
+  );
+}
+
+/** Donut chart; the legend next to it carries the same numbers as text. */
+function Ring({ parts, center, caption }: { parts: { v: number; c: string; label: string }[]; center: string; caption: string }) {
+  const total = parts.reduce((a, p) => a + p.v, 0);
+  const r = 52;
+  const len = 2 * Math.PI * r;
+  let offset = 0;
+  return (
+    <svg className="ring" viewBox="0 0 140 140" role="img" aria-label={`${center} ${caption}: ${parts.map((p) => `${p.v} ${p.label.toLowerCase()}`).join(', ')}`}>
+      <circle cx="70" cy="70" r={r} className="ring-track" />
+      {total > 0 &&
+        parts.map((p) => {
+          const l = (p.v / total) * len;
+          const el = p.v ? (
+            <circle key={p.label} cx="70" cy="70" r={r} stroke={p.c} strokeDasharray={`${Math.max(0, l - 2)} ${len}`} strokeDashoffset={-offset} className="ring-seg" />
+          ) : null;
+          offset += l;
+          return el;
+        })}
+      <text x="70" y="68" className="ring-value">
+        {center}
+      </text>
+      <text x="70" y="88" className="ring-caption">
+        {caption}
+      </text>
+    </svg>
+  );
+}
+
+function LegendRow({ color, label, n }: { color: string; label: string; n: number }) {
+  return (
+    <li>
+      <span className="swatch" style={{ background: color }} aria-hidden />
+      <span>{label}</span>
+      <strong>{n}</strong>
+    </li>
+  );
+}
+
+function Bars({ rows, total }: { rows: readonly (readonly [string, number, string])[]; total: number }) {
+  return (
+    <ul className="bars">
+      {rows.map(([label, n, tone]) => (
+        <li key={label}>
+          <span className="bars-label">{label}</span>
+          <span className="bars-track" aria-hidden>
+            <span className={`bars-fill fill-${tone}`} style={{ width: `${total ? Math.max(n ? 4 : 0, (n / total) * 100) : 0}%` }} />
+          </span>
+          <strong className="bars-n">{n}</strong>
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -116,7 +311,7 @@ function QuickActions({ role }: { role: Role }) {
     { to: '/enrol', label: '＋ Add a device', primary: true, show: can(role, 'enrollment.create') },
     { to: '/devices', label: '▤ Find a device', show: true },
     { to: '/locations', label: '⌖ Locations', show: can(role, 'location.read') },
-    { to: '/incidents', label: '⚑ Lost & stolen', show: can(role, 'location.read') },
+    { to: '/incidents/new', label: '⚑ Report lost / stolen', show: can(role, 'command.LOST_MODE_ON') },
     { to: '/compliance', label: '✓ Compliance', show: !can(role, 'enrollment.create') },
     { to: '/users', label: '⚿ Invite a user', show: can(role, 'users.manage') },
     { to: '/audit', label: '⛓ Audit log', show: can(role, 'audit.read') },

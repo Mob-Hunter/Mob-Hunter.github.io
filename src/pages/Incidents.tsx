@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { Badge, Card, Empty, ErrorBox, Field, MiniMap, fmtAgo, fmtTime, useAction, useAsyncQuery, useCan, useNow, useQuery, useRuntime } from '../ui/kit';
 import { LatestFix, LocationTable, toMapPoints } from '../ui/location';
 import { trackStats } from '../core/tracking';
 import type { IncidentRecord, IncidentSummary } from '../api/console';
+import { ReportIncidentCard } from './DeviceDetail';
 
 const RESOLUTION_LABEL: Record<string, string> = {
   found: 'Found',
@@ -41,18 +42,23 @@ export function IncidentsPage() {
   const now = useNow(15_000);
   const open = (incidents ?? []).filter((i) => i.status === 'active');
   const closed = (incidents ?? []).filter((i) => i.status !== 'active');
+  const canReport = useCan('command.LOST_MODE_ON');
   return (
     <div className="page">
-      <h1>Lost &amp; stolen</h1>
-      <div className="callout">
-        Report a device lost or stolen from its device page (Location Operator or Super Admin). Active tracking takes a fix every 1–5 minutes for a limited time, the employee sees a
-        persistent notice the whole time, and every viewing session is audited.
+      <div className="page-head">
+        <h1>Lost &amp; stolen</h1>
+        {canReport && (
+          <Link className="btn btn-danger" to="/incidents/new">
+            ⚑ Report a lost or stolen phone
+          </Link>
+        )}
       </div>
+      <IncidentFlow current={0} />
       {err && <ErrorBox>{err}</ErrorBox>}
       <Card title={`Open incidents (${open.length})`}>
         {open.length ? <IncidentList items={open} now={now} /> : <Empty>
-            No device is currently reported lost or stolen. To report one, open it from <Link to="/devices">Devices</Link> and use{' '}
-            <em>Report lost or stolen</em>. <Link to="/help">Guide</Link>
+            No phone is reported lost or stolen.{' '}
+            {canReport ? <Link to="/incidents/new">Report one</Link> : 'A Location Operator or Super Admin can report one.'}
           </Empty>}
       </Card>
       <Card title="Closed incidents">{closed.length ? <IncidentList items={closed} now={now} /> : <Empty>None yet.</Empty>}</Card>
@@ -142,6 +148,7 @@ function LiveTracking({ id }: { id: string }) {
         </h1>
         <TrackingState i={inc} now={now} />
       </div>
+      <IncidentFlow current={inc.status === 'active' ? (latest ? 2 : 1) : 3} done={inc.status === 'active' ? (latest ? 1 : 0) : 3} />
       {inc.kind === 'stolen' && inc.status === 'active' && (
         <div className="callout callout-bad">
           <strong>Stolen device:</strong> share the location with the police and do not attempt recovery yourself. If the phone holds sensitive data and is unlikely to be
@@ -219,7 +226,6 @@ function IncidentActions({ incident }: { incident: Omit<IncidentRecord, 'viewAud
   const { run, busy } = useAction();
   const [reason, setReason] = useState('');
   const [note, setNote] = useState('');
-  const [resolution, setResolution] = useState<'found' | 'recovered' | 'false_alarm' | 'not_recovered'>('found');
   return (
     <div className="grid2">
       <Card title="Tracking">
@@ -264,36 +270,132 @@ function IncidentActions({ incident }: { incident: Omit<IncidentRecord, 'viewAud
         </form>
       </Card>
       <Card title="Close incident">
-        <form
-          className="stack"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void run(() => rt.api.resolveIncident(incident.id, { resolution, note }), resolution === 'not_recovered' ? 'Closed — Lost Mode stays on; consider WIPE' : 'Closed — Lost Mode ended on the phone');
-          }}
-        >
-          <Field label="Outcome">
-            <select value={resolution} onChange={(e) => setResolution(e.target.value as typeof resolution)}>
-              <option value="found">Found by the employee</option>
-              <option value="recovered">Recovered (e.g. by police)</option>
-              <option value="false_alarm">False alarm</option>
-              <option value="not_recovered">Not recovered</option>
-            </select>
+        <div className="stack">
+          <p className="small muted">One click closes the incident. Every outcome except “Not recovered” ends Lost Mode and tracking on the phone, and the employee is told.</p>
+          <Field label="Note (optional)" hint="Added to the incident and the audit log">
+            <input value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} placeholder="e.g. Returned by station staff" />
           </Field>
-          <Field label="Note (optional)">
-            <input value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} />
-          </Field>
-          <p className="tiny muted">
-            {resolution === 'not_recovered'
-              ? 'Stops active tracking; Lost Mode stays on (locked screen, 5-minute fixes). Ask a Device Admin to WIPE the phone.'
-              : 'Ends Lost Mode and all tracking on the phone; the employee is notified.'}
-          </p>
-          <div>
-            <button className="btn btn-primary" disabled={busy}>
-              Close incident
-            </button>
+          <div className="outcomes">
+            {OUTCOMES.map((o) => (
+              <button
+                key={o.value}
+                type="button"
+                className={`btn ${o.value === 'not_recovered' ? 'btn-danger' : o.value === 'found' || o.value === 'recovered' ? 'btn-primary' : ''}`}
+                disabled={busy}
+                onClick={() => {
+                  if (!confirm(`Close this incident as “${o.label}”? ${o.value === 'not_recovered' ? 'Lost Mode stays on.' : 'Lost Mode and tracking end on the phone.'}`)) return;
+                  void run(() => rt.api.resolveIncident(incident.id, { resolution: o.value, note }), o.value === 'not_recovered' ? 'Closed — Lost Mode stays on; consider WIPE' : 'Closed — Lost Mode ended on the phone');
+                }}
+              >
+                {o.label}
+              </button>
+            ))}
           </div>
-        </form>
+          <p className="tiny muted">
+            Not recovered and holding company data? <Link to={`/devices/${incident.deviceId}`}>Open the device</Link> to wipe it (needs a second approver, company phones only).
+          </p>
+        </div>
       </Card>
     </div>
   );
 }
+
+const FLOW = [
+  { title: 'Report', text: 'Pick the phone, add the ticket and what happened.' },
+  { title: 'Lock & track', text: 'Lost Mode locks the screen with your message and shares location every 1–5 min.' },
+  { title: 'Follow live', text: 'Watch the map; extend or change tracking if needed.' },
+  { title: 'Close', text: 'One click: found, recovered, false alarm or not recovered.' },
+];
+
+/** The four steps of a lost/stolen incident; `current` highlights where this incident is. */
+export function IncidentFlow({ current, done = -1 }: { current: number; done?: number }) {
+  return (
+    <ol className="flow" aria-label="Incident steps">
+      {FLOW.map((f, i) => (
+        <li key={f.title} className={i <= done ? 'done' : i === current ? 'current' : ''} aria-current={i === current ? 'step' : undefined}>
+          <span className="flow-n" aria-hidden>
+            {i <= done ? '✓' : i + 1}
+          </span>
+          <span>
+            <strong>{f.title}</strong>
+            <small>{f.text}</small>
+          </span>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+/** Report flow without hunting for the device first: pick the phone, then one form. */
+export function ReportIncidentPage() {
+  const [params, setParams] = useSearchParams();
+  const canReport = useCan('command.LOST_MODE_ON');
+  const [devices] = useQuery((api) => api.listDevices());
+  const [q, setQ] = useState('');
+  const chosen = devices?.find((d) => d.id === params.get('device')) ?? null;
+  const eligible = (d: NonNullable<typeof devices>[number]) =>
+    !d.activeIncident && d.state !== 'wiped' && d.state !== 'retired' && !d.pendingRemoval ? (d.policyAckAt ? null : 'notice not acknowledged yet') : d.activeIncident ? 'already reported' : 'not active';
+  const terms = q.trim().toLowerCase();
+  const list = (devices ?? []).filter((d) => !terms || `${d.displayName} ${d.serial ?? ''} ${d.model ?? ''} ${d.assignedUser?.name ?? ''}`.toLowerCase().includes(terms));
+  if (!canReport) return <ErrorBox>Only a Location Operator or Super Admin can report a phone lost or stolen.</ErrorBox>;
+  return (
+    <div className="page narrow">
+      <p className="crumbs">
+        <Link to="/incidents">Lost &amp; stolen</Link> /
+      </p>
+      <h1>Report a lost or stolen phone</h1>
+      <IncidentFlow current={0} />
+      {!chosen ? (
+        <Card title="1 · Which phone?">
+          <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search by name, employee, model or serial…" aria-label="Search phones" autoFocus />
+          {list.length ? (
+            <ul className="pick-list">
+              {list.map((d) => {
+                const why = eligible(d);
+                return (
+                  <li key={d.id}>
+                    <button type="button" className="pick" disabled={!!why} onClick={() => setParams({ device: d.id })}>
+                      <span>
+                        <strong>{d.displayName}</strong>
+                        <small>{[d.assignedUser?.name ?? 'unassigned', d.model, d.serial !== 'unknown' ? d.serial : null].filter(Boolean).join(' · ')}</small>
+                      </span>
+                      {why ? <Badge tone="neutral">{why}</Badge> : <span className="pick-go" aria-hidden>→</span>}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <Empty>{devices?.length ? 'No phone matches.' : 'No phones enrolled yet.'}</Empty>
+          )}
+        </Card>
+      ) : (
+        <>
+          <div className="chosen">
+            <span>
+              <strong>{chosen.displayName}</strong> · {chosen.assignedUser?.name ?? 'unassigned'} · {chosen.model ?? 'unknown model'}
+            </span>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setParams({})}>
+              Change phone
+            </button>
+          </div>
+          {eligible(chosen) && eligible(chosen) !== 'notice not acknowledged yet' ? (
+            <ErrorBox>
+              This phone cannot be reported: {eligible(chosen)}.{' '}
+              {chosen.activeIncident && <Link to={`/incidents/${chosen.activeIncident.id}`}>Open its incident →</Link>}
+            </ErrorBox>
+          ) : (
+            <ReportIncidentCard deviceId={chosen.id} acknowledged={!!chosen.policyAckAt} title="2 · What happened?" />
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+const OUTCOMES = [
+  { value: 'found', label: '✓ Found by the employee' },
+  { value: 'recovered', label: '✓ Recovered (e.g. police)' },
+  { value: 'false_alarm', label: 'False alarm' },
+  { value: 'not_recovered', label: 'Not recovered' },
+] as const;
