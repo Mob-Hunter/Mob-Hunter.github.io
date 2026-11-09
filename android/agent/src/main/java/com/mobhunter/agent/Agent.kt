@@ -33,6 +33,8 @@ class Agent(private val ctx: Context) {
                 .put("devicePublicKey", publicKey)
                 .put("keyAlg", "ES256")
                 .put("platform", "android")
+                // Device owner = factory reset + provisioning QR; otherwise a standard enrolment on an existing phone.
+                .put("mode", if (PolicyEnforcer.isDeviceOwner(ctx)) "device_owner" else "standard")
                 .put("hardware", JSONObject().put("serial", Telemetry.serial()).put("model", Telemetry.model()).put("os", Telemetry.os())),
         )
         // Certificate pinning: the server's signing key must match the fingerprint in the QR.
@@ -84,6 +86,7 @@ class Agent(private val ctx: Context) {
             .put("serial", Telemetry.serial())
             .put("model", Telemetry.model())
             .put("os", Telemetry.os())
+            .put("capabilities", Capabilities.collect(ctx))
         val notice = config.notice
         if (config.acknowledgedAt > 0 && !config.ackSent && notice != null) {
             body.put("policyAck", JSONObject().put("version", notice.optString("version")).put("at", config.acknowledgedAt))

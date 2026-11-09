@@ -59,8 +59,7 @@ import type {
   SignedCommand,
   StoredLocation,
   Telemetry,
-  User,
-} from './types';
+  User, ManagementMode, DeviceCapabilities } from './types';
 
 export const SESSION_IDLE_MS = 30 * 60 * 1000;
 export const SESSION_ABSOLUTE_MS = 12 * 60 * 60 * 1000;
@@ -578,6 +577,8 @@ export class Backend {
     expiresAt: number;
     provisioning: ProvisioningPayload;
     sideloadApkUrl: string;
+    /** opens the agent on a phone enrolled without a factory reset (standard enrolment) */
+    standardLink: string;
   }> {
     const { user } = this.requireSession(sessionId);
     this.guard(user, 'enrollment.create');
@@ -603,7 +604,14 @@ export class Backend {
       expiresAt: rec.expiresAt,
       provisioning: await this.provisioningFor(token, opts.wifiSsid),
       sideloadApkUrl: this.opts.apkDownloadUrl || `${this.apiBaseUrl}/apk/1.0.0`,
+      standardLink: await this.standardLink(token),
     };
+  }
+
+  /** mobhunter://enrol link for enrolling an existing phone without a factory reset (same token, same server-key pin). */
+  private async standardLink(token: string): Promise<string> {
+    const q = new URLSearchParams({ server: this.apiBaseUrl, token, pin: await this.serverPin() });
+    return `mobhunter://enrol?${q.toString()}`;
   }
 
   private async provisioningFor(token: string, wifiSsid?: string): Promise<ProvisioningPayload> {
@@ -626,7 +634,8 @@ export class Backend {
 
   /** GET /e/{token} — public install page data. Reveals nothing once used or expired. */
   async installPage(token: string): Promise<
-    { status: 'valid'; expiresAt: number; provisioning: ProvisioningPayload; sideloadApkUrl: string } | { status: 'used' | 'expired' | 'invalid' }
+    | { status: 'valid'; expiresAt: number; provisioning: ProvisioningPayload; sideloadApkUrl: string; standardLink: string }
+    | { status: 'used' | 'expired' | 'invalid' }
   > {
     this.publicLimiter.check('install', this.clock());
     if (typeof token !== 'string' || token.length < 16 || token.length > 64) return { status: 'invalid' };
@@ -635,7 +644,13 @@ export class Backend {
     if (!found) return { status: 'invalid' };
     if (found.usedAt) return { status: 'used' };
     if (found.expiresAt < this.clock()) return { status: 'expired' };
-    return { status: 'valid', expiresAt: found.expiresAt, provisioning: await this.provisioningFor(token), sideloadApkUrl: this.opts.apkDownloadUrl || `${this.apiBaseUrl}/apk/1.0.0` };
+    return {
+      status: 'valid',
+      expiresAt: found.expiresAt,
+      provisioning: await this.provisioningFor(token),
+      sideloadApkUrl: this.opts.apkDownloadUrl || `${this.apiBaseUrl}/apk/1.0.0`,
+      standardLink: await this.standardLink(token),
+    };
   }
 
   /** POST /v1/enroll — exchanges the one-time token for a device id and a client certificate. */
@@ -646,6 +661,8 @@ export class Backend {
     /** 'ES256' for Android Keystore P-256 keys (SPKI hex); default Ed25519 (32-byte hex) */
     keyAlg?: 'Ed25519' | 'ES256';
     hardware: { serial: string; model: string; os: string };
+    /** 'standard' when the agent is not device owner (installed without a factory reset) */
+    mode?: ManagementMode;
   }): Promise<{ deviceId: string; cert: DeviceCertificate; certJson: string; certSig: string; serverPublicKey: string; caPublicKey: string; policy: DevicePolicy; notice: Notice; transparencyUrl: string }> {
     const now = this.clock();
     this.enrollLimiter.check('enroll', now);
@@ -695,11 +712,13 @@ export class Backend {
       policy: defaultPolicy(),
       transparencyKey: randomId('', 18),
       enrollmentTokenId: rec.id,
+      managementMode: input.mode === 'standard' ? 'standard' : 'device_owner',
+      capabilities: null,
     };
     rec.deviceId = deviceId;
     this.state.devices.push(device);
     this.state.relayQueues[deviceId] = [];
-    await this.audit.append({ at: now, actor: deviceId, actorRole: 'DEVICE', action: 'device.enrolled', target: deviceId, detail: { enrollment: rec.id, certSerial: cert.serial } });
+    await this.audit.append({ at: now, actor: deviceId, actorRole: 'DEVICE', action: 'device.enrolled', target: deviceId, detail: { enrollment: rec.id, certSerial: cert.serial, mode: device.managementMode } });
     this.persist();
     return {
       deviceId,
@@ -760,7 +779,7 @@ export class Backend {
   }
 
   /** POST /v1/checkin */
-  async checkin(auth: DeviceAuth, body: { telemetry: Telemetry; serial: string; model: string; os: string; policyAck?: { version: string; at: number } }): Promise<{ ok: true; state: Device['state']; policyVersion: number; pendingCommands: number; transparencyUrl: string }> {
+  async checkin(auth: DeviceAuth, body: { telemetry: Telemetry; serial: string; model: string; os: string; policyAck?: { version: string; at: number }; capabilities?: DeviceCapabilities }): Promise<{ ok: true; state: Device['state']; policyVersion: number; pendingCommands: number; transparencyUrl: string }> {
     const d = await this.authenticateDevice('POST', '/v1/checkin', body, auth);
     const now = this.clock();
     d.lastCheckinAt = now;
@@ -768,6 +787,7 @@ export class Backend {
     if (body.model) d.model = String(body.model).slice(0, 64);
     if (body.os) d.os = String(body.os).slice(0, 64);
     if (body.telemetry) d.telemetry = sanitiseTelemetry(body.telemetry);
+    if (body.capabilities && typeof body.capabilities === 'object') d.capabilities = sanitiseCapabilities(body.capabilities);
     if (body.policyAck && !d.policyAckAt) {
       if (body.policyAck.version !== COLLECTION_NOTICE.version) throw new ApiError(409, 'notice_outdated', 'Acknowledged notice version is not current');
       d.policyAckAt = now;
@@ -931,6 +951,8 @@ export class Backend {
     this.guard(user, `command.${input.type}`);
     const d = this.findDevice(deviceId);
     if (d.state === 'wiped' || d.state === 'retired') throw new ApiError(409, 'device_inactive', 'Device is wiped or retired');
+    const unsupported = unsupportedReason(d, input.type);
+    if (unsupported) throw new ApiError(422, 'not_supported', unsupported);
     const ticket = input.ticket?.trim();
     if (TICKET_REQUIRED.has(input.type)) {
       if (!ticket || !/^[A-Z][A-Z0-9]{1,9}-\d{1,8}$/.test(ticket)) throw new ApiError(422, 'ticket_required', 'A ticket reference like INC-1234 is required for this command');
@@ -1984,3 +2006,23 @@ export function complianceIssues(d: Device, now: number): ComplianceIssue[] {
 }
 
 export { can };
+
+/** Commands that need the agent to be device owner (factory reset + provisioning QR). */
+const DEVICE_OWNER_ONLY: ReadonlySet<CommandType> = new Set(['WIPE', 'REBOOT', 'INSTALL_APP']);
+
+/** Why a command cannot run on this phone, or null. Keeps admins from queuing commands that can only fail. */
+export function unsupportedReason(d: Pick<Device, 'managementMode' | 'capabilities'>, type: CommandType): string | null {
+  if (d.managementMode !== 'standard') return null;
+  if (DEVICE_OWNER_ONLY.has(type)) return 'Not available on a phone enrolled without a factory reset (standard enrolment). Re-enrol it as a company device to wipe, reboot or install apps.';
+  if (type === 'LOCK' && !d.capabilities?.deviceAdmin) return 'Remote lock is off on this phone: the user has not allowed it in the Mob Hunter app.';
+  return null;
+}
+
+function sanitiseCapabilities(c: Partial<DeviceCapabilities>): DeviceCapabilities {
+  return {
+    deviceOwner: c.deviceOwner === true,
+    deviceAdmin: c.deviceAdmin === true,
+    notifications: c.notifications === true,
+    location: c.location === 'background' || c.location === 'foreground' ? c.location : 'none',
+  };
+}

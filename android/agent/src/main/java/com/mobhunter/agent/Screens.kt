@@ -129,7 +129,7 @@ private fun noticeView(a: Activity, onDone: (Boolean) -> Unit): View {
     val n = c.notice
     return a.column {
         text(n?.optString("title") ?: "Company device notice", 22f, bold = true)
-        text("This phone is owned and managed by your organisation.")
+        text(if (PolicyEnforcer.isDeviceOwner(a)) "This phone is owned and managed by your organisation." else "This phone is enrolled with your organisation without a factory reset. Your organisation cannot wipe it, read your data or install apps on it.")
         text("What is collected", 18f, bold = true)
         text(bulletList(n, "collected", FALLBACK_COLLECTED))
         text("Never collected", 18f, bold = true)

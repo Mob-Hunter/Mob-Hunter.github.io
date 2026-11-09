@@ -53,7 +53,24 @@ Put the output in `APK_SIGNATURE_CHECKSUM` in `wrangler.toml`. Android refuses t
 5. The agent's **policy-compliance screen** runs inside Setup. It generates the Keystore key, enrols, checks the server key against the pin in the QR, and shows the notice. Nothing is collected until the employee taps **I understand**.
 6. The phone appears in the console as **Unnamed device**. Rename it and assign it to an employee.
 
-A sideloaded agent (installed from the APK link) is an ordinary app without device-owner rights. It is for developer testing only.
+## Enrolling a personal or test phone (no factory reset)
+
+For a phone that cannot be factory-reset, such as your own phone during a pilot, use **standard enrolment**:
+
+1. Install the agent from the download page (QR code or **Download APK**). It appears in the launcher as **Mob Hunter**.
+2. In the console, go to **Add devices → Mint token + QR**. Then scan the **Personal or test phone** QR with the phone's camera. It encodes a `mobhunter://enrol?server=…&token=…&pin=…` link that opens the app. Alternatively, open the install link on the phone and tap **Open in the Mob Hunter app**, or paste the install link into the app.
+3. The app enrols with the same one-time token and server-key pin as the company QR. It then asks for:
+   - notifications;
+   - location (choose **Allow all the time** so a lost phone can still be found);
+   - optionally, remote lock (device admin).
+4. Read the notice and tap **I understand**. The phone appears in the console, marked **Standard**, with the permissions the user granted.
+
+A standard enrolment is not device owner, so:
+- policy cannot be enforced;
+- **wipe, reboot and silent app installs are refused**, both by the server and by the phone itself;
+- remote lock works only if the user allowed it.
+
+Health, ticketed LOCATE, Lost Mode tracking (the full-screen lock is best effort) and auto-uninstall on delete all work. Without push (FCM) configured, the phone checks in every 15 minutes, which is Android's minimum for background work. A LOCATE can therefore take up to 15 minutes to arrive. Opening the app and tapping **Sync now** delivers it at once.
 
 ## What the agent does
 

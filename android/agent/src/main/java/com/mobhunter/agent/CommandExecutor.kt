@@ -30,6 +30,17 @@ class CommandExecutor(private val ctx: Context, private val config: Config, priv
                 result(id, "rejected", "User has not acknowledged the device notice")
                 return
             }
+            // A phone enrolled without a factory reset is not device owner: never wipe, reboot or
+            // install silently there. The server refuses these too; this is the phone's own guard.
+            val owner = PolicyEnforcer.isDeviceOwner(ctx)
+            if (!owner && type in setOf("WIPE", "REBOOT", "INSTALL_APP")) {
+                result(id, "rejected", "Not available on a phone enrolled without a factory reset")
+                return
+            }
+            if (type == "LOCK" && !dpm.isAdminActive(admin)) {
+                result(id, "rejected", "Remote lock is not allowed on this phone (Mob Hunter app → Remote lock)")
+                return
+            }
             when (type) {
                 "LOCATE" -> {
                     // Notification FIRST, every time, with the ticket — then the fix.

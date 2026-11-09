@@ -1,5 +1,6 @@
 <resources>
     <string name="app_name">Company device management</string>
+    <string name="launcher_name">Mob Hunter</string>
     <string name="admin_label">Company device management</string>
     <string name="admin_description">Lets your organisation manage this company-owned phone: security policy, lock, wipe, app installs and — only when needed and always with a notification — its location.</string>
 </resources>
