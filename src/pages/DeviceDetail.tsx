@@ -6,6 +6,9 @@ import { DeviceLocationPanel } from '../ui/location';
 import { COMMAND_TYPES, DUAL_CONTROL, TICKET_REQUIRED, can, type CommandType } from '../core/rbac';
 import { StatusBadge } from './Overview';
 import { stateBadge } from './Devices';
+import { RiskMeter, SeverityBadge, ThreatActions } from './Threats';
+import { PLATFORM_ICON, PLATFORM_LABEL, isComputer } from '../ui/platform';
+import type { SecurityPosture } from '../core/types';
 
 const COMMAND_HELP: Record<CommandType, string> = {
   LOCATE: 'One-off high-accuracy fix. The user always gets a notification.',
@@ -49,7 +52,7 @@ export function DeviceDetailPage() {
         <h1>{device.displayName}</h1>
         <div className="page-head-actions">
           {stateBadge(device)}
-          {canReportLost && !device.activeIncident && device.state !== 'wiped' && device.state !== 'retired' && !device.pendingRemoval && (
+          {canReportLost && !isComputer(device.platform) && !device.activeIncident && device.state !== 'wiped' && device.state !== 'retired' && !device.pendingRemoval && (
             <Link className="btn btn-danger btn-sm" to={`/incidents/new?device=${device.id}`}>
               ⚑ Report lost or stolen
             </Link>
@@ -73,13 +76,18 @@ export function DeviceDetailPage() {
       <div className="grid2">
         <Card title="Device">
           <dl className="kv">
+            <dt>Platform</dt>
+            <dd>
+              <span aria-hidden>{PLATFORM_ICON[device.platform]}</span> {PLATFORM_LABEL[device.platform]}
+              {device.telemetry?.security?.agentVersion ? <span className="muted small"> · agent {device.telemetry.security.agentVersion}</span> : null}
+            </dd>
             <dt>Assigned to</dt>
             <dd>{device.assignedUser ? `${device.assignedUser.name} (${device.assignedUser.department})` : '—'}</dd>
             <dt>Model</dt>
             <dd>{device.model ?? '—'}</dd>
             <dt>Serial</dt>
             <dd>{device.serial ?? '—'}</dd>
-            <dt>OS / patch</dt>
+            <dt>{isComputer(device.platform) ? 'OS / last update' : 'OS / patch'}</dt>
             <dd>
               {device.os ?? '—'} · {device.telemetry?.patchLevel ?? '—'}
             </dd>
@@ -87,7 +95,17 @@ export function DeviceDetailPage() {
             <dd>{fmtTime(device.enrolledAt)}</dd>
             <dt>Enrolment type</dt>
             <dd>
-              {device.managementMode === 'standard' ? (
+              {isComputer(device.platform) ? (
+                device.managementMode === 'standard' ? (
+                  <>
+                    <Badge tone="info">Desktop agent</Badge> user mode (no reboot)
+                  </>
+                ) : (
+                  <>
+                    <Badge tone="ok">Desktop agent</Badge> system service
+                  </>
+                )
+              ) : device.managementMode === 'standard' ? (
                 <>
                   <Badge tone="info">Standard</Badge> existing phone, no factory reset
                 </>
@@ -128,22 +146,65 @@ export function DeviceDetailPage() {
             <dl className="kv">
               <dt>Battery</dt>
               <dd>
-                {device.telemetry.batteryLevel}% · {device.telemetry.batteryHealth} · {device.telemetry.batteryTempC} °C
+                {device.telemetry.noBattery ? 'Mains power (no battery)' : `${device.telemetry.batteryLevel}% · ${device.telemetry.batteryHealth} · ${device.telemetry.batteryTempC} °C`}
               </dd>
               <dt>Storage</dt>
               <dd>
                 {device.telemetry.storageFreeGb} GB free of {device.telemetry.storageTotalGb} GB
               </dd>
-              <dt>Play Integrity</dt>
-              <dd>
-                <Badge tone={device.telemetry.integrity === 'FAILED' ? 'bad' : 'ok'}>{device.telemetry.integrity}</Badge>
-              </dd>
+              {device.platform === 'android' && (
+                <>
+                  <dt>Play Integrity</dt>
+                  <dd>
+                    <Badge tone={device.telemetry.integrity === 'FAILED' ? 'bad' : device.telemetry.integrity === 'NOT_EVALUATED' ? 'neutral' : 'ok'}>{device.telemetry.integrity}</Badge>
+                  </dd>
+                </>
+              )}
+              {device.telemetry.security && (
+                <>
+                  <dt>Security settings</dt>
+                  <dd className="cap-list">
+                    <Posture s={device.telemetry.security} />
+                  </dd>
+                </>
+              )}
             </dl>
           ) : (
             <Empty>No telemetry yet.</Empty>
           )}
         </Card>
       </div>
+
+      <Card
+        title={
+          <>
+            Security posture <RiskMeter score={device.risk.score} band={device.risk.band} />
+          </>
+        }
+        actions={<Link to="/threats">Threat landscape →</Link>}
+      >
+        {device.risk.threats.length ? (
+          <ul className="threat-list">
+            {device.risk.threats.map((t) => (
+              <li key={t.key} className={`threat sev-${t.severity}${t.accepted ? ' accepted' : ''}`}>
+                <div className="threat-head">
+                  <SeverityBadge severity={t.severity} />
+                  <strong>{t.title}</strong>
+                  <span className="muted small">
+                    {t.category} · since {fmtAgo(t.firstSeen)}
+                  </span>
+                </div>
+                <p className="small">
+                  <span className="muted">{t.detail}.</span> {t.why} <strong>Fix:</strong> {t.fix}
+                </p>
+                <ThreatActions deviceId={device.id} threat={t} />
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <Empty>No threats detected on this device. Checks run at every check-in.</Empty>
+        )}
+      </Card>
 
       {canUpdate && <RenameCard key={device.id} device={device} employees={(employees ?? []).filter((e) => e.status !== 'leaver')} />}
 
@@ -198,7 +259,7 @@ export function DeviceDetailPage() {
       {canReportLost && !device.activeIncident && device.state !== 'wiped' && device.state !== 'retired' && !device.pendingRemoval && (
         <ReportIncidentCard deviceId={device.id} acknowledged={!!device.policyAckAt} />
       )}
-      <PolicyCard deviceId={device.id} policy={device.policy} standard={device.managementMode === 'standard'} />
+      {!isComputer(device.platform) && <PolicyCard deviceId={device.id} policy={device.policy} standard={device.managementMode === 'standard'} />}
       <DeviceLocationPanel deviceId={device.id} commands={commands} lostMode={device.lostMode} />
       {canRetire && device.state !== 'retired' && device.state !== 'wiped' && <RetireCard deviceId={device.id} />}
       {canDelete && (device.pendingRemoval ? <RemovalPendingCard device={device} /> : <DeleteCard deviceId={device.id} name={device.displayName} state={device.state} />)}
@@ -639,5 +700,35 @@ export function ReportIncidentCard({ deviceId, acknowledged, title = 'Report los
         </form>
       )}
     </Card>
+  );
+}
+
+const POSTURE: { key: keyof SecurityPosture; good: boolean; on: string; off: string }[] = [
+  { key: 'screenLock', good: true, on: 'Screen lock', off: 'No screen lock' },
+  { key: 'encrypted', good: true, on: 'Encrypted', off: 'Not encrypted' },
+  { key: 'firewall', good: true, on: 'Firewall on', off: 'Firewall off' },
+  { key: 'antivirus', good: true, on: 'Antivirus on', off: 'Antivirus off' },
+  { key: 'secureBoot', good: true, on: 'Secure Boot', off: 'Secure Boot off' },
+  { key: 'compromised', good: false, on: 'Compromised', off: 'Integrity OK' },
+  { key: 'usbDebugging', good: false, on: 'USB debugging on', off: 'USB debugging off' },
+  { key: 'unknownSources', good: false, on: 'Unknown sources allowed', off: 'Unknown sources blocked' },
+  { key: 'openWifi', good: false, on: 'Open Wi-Fi', off: 'Secure network' },
+];
+
+/** The device's reported security settings as badges (green = safe). */
+function Posture({ s }: { s: SecurityPosture }) {
+  return (
+    <>
+      {POSTURE.filter((p) => typeof s[p.key] === 'boolean').map((p) => {
+        const v = s[p.key] as boolean;
+        const safe = v === p.good;
+        return (
+          <Badge key={p.key} tone={safe ? 'ok' : 'bad'}>
+            {v ? p.on : p.off}
+          </Badge>
+        );
+      })}
+      {typeof s.pendingUpdates === 'number' && <Badge tone={s.pendingUpdates ? 'warn' : 'ok'}>{s.pendingUpdates ? `${s.pendingUpdates} updates pending` : 'Up to date'}</Badge>}
+    </>
   );
 }

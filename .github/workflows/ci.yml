@@ -69,6 +69,35 @@ jobs:
             android/console/build/outputs/apk/release/*.apk
           retention-days: 14
 
+  desktop:
+    name: Desktop agent (Windows, Linux, macOS)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci && npm run build
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: agents/desktop/go.mod
+      - name: Vet (every OS) and unit tests
+        working-directory: agents/desktop
+        run: |
+          test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+          for os in linux windows darwin; do GOOS=$os go vet ./...; done
+          go test ./...
+      - name: Agent ↔ server interop (real client against the Worker in workerd)
+        run: agents/desktop/interop.sh
+      - name: Cross-compile
+        run: agents/desktop/build.sh desktop-out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mob-hunter-desktop-agent
+          path: desktop-out/
+          retention-days: 14
+
   codeql:
     runs-on: ubuntu-latest
     permissions:

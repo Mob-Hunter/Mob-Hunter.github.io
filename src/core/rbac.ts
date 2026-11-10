@@ -54,6 +54,8 @@ export type Permission =
   | 'apps.manage'
   | 'settings.manage'
   | 'privacy.dsar'
+  | 'threat.read'
+  | 'threat.manage'
   | `command.${CommandType}`;
 
 const ALL_READ: Role[] = [...ROLES];
@@ -81,6 +83,9 @@ export const PERMISSIONS: Record<Permission, readonly Role[]> = {
   'settings.manage': ['SUPER_ADMIN'],
   // Data-subject access requests: Security (acting for the DPO) and Super Admin; never the Location Operator.
   'privacy.dsar': ['SUPER_ADMIN', 'SECURITY'],
+  // Threat posture is visible to every console role; accepting a risk is a Security / admin decision (audited, time-limited).
+  'threat.read': ALL_READ,
+  'threat.manage': ['SUPER_ADMIN', 'SECURITY', 'DEVICE_ADMIN'],
   // LOCATE and Lost Mode: Location Operator and Super Admin. Ticket required; the employee is always notified.
   'command.LOCATE': ['SUPER_ADMIN', 'LOCATION_OPERATOR'],
   'command.LOST_MODE_ON': ['SUPER_ADMIN', 'LOCATION_OPERATOR'],

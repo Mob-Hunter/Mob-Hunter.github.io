@@ -60,6 +60,11 @@ jobs:
         run: mkdir -p apk-out && cp releases/android/* apk-out/ && (cd apk-out && sha256sum -c SHA256SUMS.txt)
       - name: Publish APKs with the site
         run: mkdir -p dist/downloads && cp apk-out/*.apk apk-out/SHA256SUMS.txt dist/downloads/
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: agents/desktop/go.mod
+      - name: Build and publish the desktop agent (Windows, Linux, macOS)
+        run: agents/desktop/build.sh dist/downloads "$(grep -m1 'var Version' agents/desktop/main.go | cut -d'"' -f2)"
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

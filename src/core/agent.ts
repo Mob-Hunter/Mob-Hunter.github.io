@@ -13,7 +13,7 @@ import { CommandVerifier, type VerifyFailure } from './commands';
 import { fingerprint, generateEd25519, randomId, signEd25519 } from './crypto';
 import { COLLECTION_NOTICE } from './enrollment';
 import { lostFixIntervalMs } from './tracking';
-import type { DeviceCertificate, DevicePolicy, LocationFix, ProvisioningPayload, SignedCommand, Telemetry } from './types';
+import type { DeviceCertificate, DevicePolicy, LocationFix, ProvisioningPayload, SignedCommand, SecurityPosture, Telemetry } from './types';
 import { LocalDeviceTransport, type DeviceSigner, type DeviceTransport } from '../api/device';
 
 export interface AgentNotification {
@@ -57,6 +57,9 @@ export interface AgentState {
   autoPull?: boolean;
   /** management released and the agent uninstalled (RELEASE) */
   released?: boolean;
+  /** simulated platform (default android) and security posture reported in telemetry */
+  platform?: 'android' | 'windows' | 'linux' | 'macos';
+  posture?: { integrity?: Telemetry['integrity']; patchLevel?: string; noBattery?: boolean; security?: SecurityPosture };
   /** active tracking of a lost/stolen incident (from LOST_MODE_ON params) */
   tracking?: { intervalSec: number; until: number; kind: 'lost' | 'stolen' } | null;
 }
@@ -143,7 +146,7 @@ export class SimulatedAgent {
   /** POST /v1/enroll. The keypair is generated on the device (Android Keystore in the real agent). */
   async enroll(): Promise<void> {
     const keys = await generateEd25519();
-    const res = await this.t.enroll({ token: this.state.provisioning.token, devicePublicKey: keys.publicKey, platform: 'android', hardware: this.state.hardware });
+    const res = await this.t.enroll({ token: this.state.provisioning.token, devicePublicKey: keys.publicKey, platform: this.state.platform ?? 'android', hardware: this.state.hardware });
     // Certificate pinning: the server key must match the fingerprint delivered in the QR.
     if ((await fingerprint(res.serverPublicKey)) !== this.state.provisioning.serverPin) throw new PinMismatchError();
     this.state.keys = keys;
@@ -178,8 +181,10 @@ export class SimulatedAgent {
       batteryTempC: 28 + Math.round(Math.random() * 8),
       storageFreeGb: 41.2,
       storageTotalGb: 128,
-      integrity: 'MEETS_DEVICE_INTEGRITY',
-      patchLevel: '2026-10-05',
+      integrity: this.state.posture?.integrity ?? (this.state.platform && this.state.platform !== 'android' ? 'NOT_EVALUATED' : 'MEETS_DEVICE_INTEGRITY'),
+      patchLevel: this.state.posture?.patchLevel ?? '2026-10-05',
+      ...(this.state.posture?.noBattery ? { noBattery: true } : {}),
+      security: { screenLock: true, encrypted: true, devOptions: false, usbDebugging: false, unknownSources: false, openWifi: false, ...this.state.posture?.security },
     };
   }
 

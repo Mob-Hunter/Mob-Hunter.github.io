@@ -24,6 +24,8 @@ const PERM_LABEL: Partial<Record<Permission, string>> = {
   'apps.manage': 'Manage app catalogue',
   'settings.manage': 'Organisation settings',
   'privacy.dsar': 'Data-subject access export',
+  'threat.read': 'View threat landscape',
+  'threat.manage': 'Accept or reopen threats',
 };
 
 export function RolesPage() {

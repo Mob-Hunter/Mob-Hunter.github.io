@@ -22,6 +22,7 @@ import { TransparencyPage } from './pages/Transparency';
 import { PrivacyPage } from './pages/Privacy';
 import { DownloadPage, AppsPage } from './pages/Download';
 import { HelpPage } from './pages/Help';
+import { ThreatsPage } from './pages/Threats';
 import { CommandPalette, type PaletteEntry } from './ui/palette';
 import { getTheme, setTheme, type Theme } from './ui/theme';
 
@@ -32,6 +33,7 @@ const NAV: NavItem[] = [
   { group: 'Fleet', to: '/devices', label: 'Devices', icon: '▤', keywords: 'phones fleet list' },
   { group: 'Fleet', to: '/enrol', label: 'Add devices', icon: '＋', perm: 'enrollment.create', keywords: 'enrol enroll qr new phone' },
   { group: 'Fleet', to: '/compliance', label: 'Compliance', icon: '✓', keywords: 'health patch battery issues' },
+  { group: 'Security', to: '/threats', label: 'Threat landscape', icon: '⚠', perm: 'threat.read', keywords: 'mtd mobile threat defense risk root jailbreak malware patch encryption vulnerability security' },
   { group: 'Find & recover', to: '/incidents', label: 'Lost & stolen', icon: '⚑', keywords: 'incident tracking lost mode' },
   { group: 'Find & recover', to: '/locations', label: 'Locations', icon: '⌖', anyOf: ['location.read', 'location.purge'], keywords: 'map locate where ticket' },
   { group: 'People & access', to: '/employees', label: 'Employees', icon: '☺', keywords: 'staff hr import csv' },
@@ -39,7 +41,7 @@ const NAV: NavItem[] = [
   { group: 'People & access', to: '/roles', label: 'Roles', icon: '▦', keywords: 'permissions rbac' },
   { group: 'Governance', to: '/audit', label: 'Audit log', icon: '⛓', perm: 'audit.read', keywords: 'history export verify' },
   { group: 'Governance', to: '/privacy', label: 'Privacy & governance', icon: '§', keywords: 'gdpr dpia notice' },
-  { group: 'Setup & help', to: '/apps', label: 'Android apps', icon: '⬇', keywords: 'apk download qr install' },
+  { group: 'Setup & help', to: '/apps', label: 'Agents & apps', icon: '⬇', keywords: 'apk download qr install android windows linux macos desktop agent' },
   { group: 'Setup & help', to: '/settings', label: 'Settings', icon: '⚙', keywords: 'organisation dpo siem password catalogue' },
   { group: 'Setup & help', to: '/simulator', label: 'Device simulator', icon: '▯', keywords: 'test phone' },
   { group: 'Setup & help', to: '/help', label: 'Help & guides', icon: '?', keywords: 'how to guide faq support' },
@@ -53,6 +55,8 @@ const ACTIONS: ActionItem[] = [
   { to: '/locations', label: 'Find a phone’s location', icon: '⌖', perm: 'location.read', keywords: 'locate map' },
   { to: '/users', label: 'Invite a console user', icon: '⚿', perm: 'users.manage', keywords: 'admin add user' },
   { to: '/employees', label: 'Import employees (CSV)', icon: '☺', perm: 'employee.manage', keywords: 'hr' },
+  { to: '/threats', label: 'Review security threats', icon: '⚠', perm: 'threat.read', keywords: 'risk mtd root patch' },
+  { to: '/enrol?platform=desktop', label: 'Add a Windows, Linux or Mac computer', icon: '⊞', perm: 'enrollment.create', keywords: 'desktop laptop pc agent windows linux macos' },
   { to: '/audit', label: 'Verify the audit log', icon: '⛓', perm: 'audit.read', keywords: 'hash chain' },
   { to: '/settings', label: 'Change my password', icon: '⚙', keywords: 'account' },
 ];
@@ -214,6 +218,7 @@ export function App() {
         <Route path="/devices" element={guarded(<DevicesPage />)} />
         <Route path="/devices/:id" element={guarded(<DeviceDetailPage />)} />
         <Route path="/compliance" element={guarded(<CompliancePage />)} />
+        <Route path="/threats" element={guarded(<ThreatsPage />)} />
         <Route path="/enrol" element={guarded(<EnrolPage />)} />
         <Route path="/locations" element={guarded(<LocationsPage />)} />
         <Route path="/incidents" element={guarded(<IncidentsPage />)} />

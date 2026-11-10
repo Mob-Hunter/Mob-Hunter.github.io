@@ -63,18 +63,19 @@ export function defaultPolicy(): DevicePolicy {
 
 /** Policy text the employee acknowledges at enrolment (Non-negotiable #1). */
 export const COLLECTION_NOTICE = {
-  version: '2026-11-v2',
+  version: '2026-11-v3',
   title: 'Company device notice',
   collected: [
     'Device identifiers: serial number, model, OS version and security patch level.',
     'Device health: battery level, health and temperature; free storage; Play Integrity verdict.',
+    'Security settings, to detect threats: whether a screen lock, encryption, firewall and malware protection are on, whether USB debugging, developer options or unknown app sources are enabled, whether the Wi-Fi network is encrypted (not its name), and how many OS updates are waiting.',
     'Location — only when a Location Operator or the Super Admin requests it against a ticket (you get a notification every time), while the device is in Lost Mode, or, if your policy enables it, every 15+ minutes during working hours with a persistent notification.',
     'The list of company apps installed by the management service.',
   ],
   notCollected: [
     'Messages, e-mail, call content, photos, files, browsing history.',
     'Screen contents or screenshots. There is no remote screen or remote shell.',
-    'Network traffic or security logs (both are switched off).',
+    'Network traffic or security logs (both are switched off), Wi-Fi network names, or which apps and websites you use.',
   ],
   retention: 'Location results are encrypted and deleted after 30 days. Audit records of who requested a location are kept for 1 year.',
   rights: 'You can see every location request made for your device on the transparency page linked from each notification, and you can contact the Data Protection Officer to access or correct your data.',

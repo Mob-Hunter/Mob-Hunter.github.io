@@ -201,6 +201,21 @@ export class Runtime {
     // Device 2: freshly enrolled, unnamed, awaiting the user's acknowledgement.
     const e2 = await backend.createEnrollment(sid, { note: 'Seed device 2' });
     await this.addAgent(e2.provisioning, { autoPull: true });
+    // Threat landscape demo: device 1 runs an old patch with USB debugging on, on open Wi-Fi.
+    a1.state.posture = { patchLevel: '2026-04-05', security: { usbDebugging: true, devOptions: true, openWifi: true } };
+    await a1.checkin();
+    // Two computers running the desktop agent (Windows and Linux).
+    const computers = [
+      { label: 'Finance laptop (Windows)', platform: 'windows' as const, hardware: { serial: 'PF4K2Z9', model: 'Dell Latitude 7450', os: 'Windows 11 Pro 24H2 (26100.4351)' }, posture: { patchLevel: '2026-10-14', security: { encrypted: true, firewall: false, antivirus: true, secureBoot: true, screenLock: true, pendingUpdates: 3 } }, emp: 1 },
+      { label: 'Build server (Linux)', platform: 'linux' as const, hardware: { serial: 'MJ0K7Q2B', model: 'Lenovo ThinkCentre M70q', os: 'Ubuntu 24.04.3 LTS' }, posture: { patchLevel: '2026-11-02', noBattery: true, security: { encrypted: false, firewall: true, secureBoot: true, pendingUpdates: 12 } }, emp: null },
+    ];
+    for (const c of computers) {
+      const e = await backend.createEnrollment(sid, { note: c.label });
+      const ag = await this.addAgent(e.provisioning, { seed: { platform: c.platform, hardware: c.hardware, posture: c.posture, battery: 92 } });
+      ag.acknowledge();
+      await ag.checkin();
+      await backend.updateDevice(sid, ag.state.deviceId!, { label: c.label, assignedUserId: c.emp === null ? null : emps[c.emp].id, tags: ['Computers'] });
+    }
     await backend.logout(sid);
 
     // Location history for the demo: the Location Operator locates device 1 twice against a ticket,
@@ -279,8 +294,8 @@ export class Runtime {
     this.emit();
   }
 
-  async addAgent(provisioning: ProvisioningPayload, opts: { autoPull?: boolean } = {}): Promise<SimulatedAgent> {
-    const agent = this.agentFor(newAgentFromProvisioning(provisioning, { autoPull: opts.autoPull ?? true }));
+  async addAgent(provisioning: ProvisioningPayload, opts: { autoPull?: boolean; seed?: Partial<AgentState> } = {}): Promise<SimulatedAgent> {
+    const agent = this.agentFor(newAgentFromProvisioning(provisioning, { autoPull: opts.autoPull ?? true, ...opts.seed }));
     await agent.enroll();
     await agent.checkin(); // like the real agent: first check-in right after enrolment
     this.agents.set(agent.state.simId, agent);
