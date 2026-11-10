@@ -65,6 +65,8 @@ jobs:
           go-version-file: agents/desktop/go.mod
       - name: Build and publish the desktop agent (Windows, Linux, macOS)
         run: agents/desktop/build.sh dist/downloads "$(grep -m1 'var Version' agents/desktop/main.go | cut -d'"' -f2)"
+      - name: Downloads index page (GitHub Pages has no directory listings)
+        run: node scripts/downloads-index.mjs dist/downloads "$SERVER_URL"
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
