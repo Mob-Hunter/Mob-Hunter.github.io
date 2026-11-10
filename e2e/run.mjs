@@ -281,6 +281,25 @@ try {
   await page.getByText(/Checks in every\s*4 hours\s*\(set for this device\)/).waitFor();
   ok('check-in frequency: organisation default set in Settings, per-device override on the device page');
 
+  // Inventory: tabs on the device page and the fleet software search.
+  await go('Devices');
+  await page.getByRole('link', { name: 'Finance laptop (Windows)' }).click();
+  await page.getByRole('heading', { name: 'Finance laptop (Windows)' }).waitFor();
+  const invCard = page.locator('section.card', { has: page.getByRole('tablist', { name: 'Inventory sections' }) });
+  await invCard.getByText('Intel(R) Core(TM) Ultra 7 165U').waitFor();
+  await invCard.getByRole('tab', { name: /Settings/ }).click();
+  await invCard.getByText('User Account Control').waitFor();
+  await invCard.getByRole('tab', { name: /Software/ }).click();
+  await invCard.getByLabel('Search installed programs').fill('chrome');
+  await invCard.getByRole('cell', { name: 'Google Chrome' }).waitFor();
+  await invCard.getByRole('button', { name: /Refresh inventory/ }).click();
+  await page.locator('.toast-ok', { hasText: 'Inventory requested' }).waitFor();
+  await go(/Software inventory/);
+  await page.getByLabel('Search software').fill('docker');
+  await page.getByRole('button', { name: /docker-ce/ }).click();
+  await page.getByRole('link', { name: 'Build server (Linux)' }).waitFor();
+  ok('inventory: overview, settings and software tabs; refresh command; fleet software search finds the device');
+
   // MDM parity: groups + asset tag on a device, restrictions, then a bulk message to a group.
   await go('Devices');
   await page.getByRole('heading', { name: 'Devices', exact: true }).waitFor();
@@ -443,7 +462,7 @@ try {
   ok('computer enrolment: per-OS install command with the one-time link; Windows computer enrolled and listed');
 
   // Accessibility: no serious or critical WCAG 2.1 AA violations on the main screens
-  for (const route of ['#/', '#/devices', '#/threats', '#/enrol?platform=desktop', '#/apps', '#/audit', '#/settings', '#/privacy', '#/download']) {
+  for (const route of ['#/', '#/devices', '#/software', '#/threats', '#/enrol?platform=desktop', '#/apps', '#/audit', '#/settings', '#/privacy', '#/download']) {
     await page.goto(`${base}${route}`);
     await page.locator('h1').first().waitFor();
     await page.waitForTimeout(300);

@@ -25,6 +25,7 @@ type Config struct {
 	Seen            []string `json:"seen"`
 	Privileged      bool     `json:"privileged"`
 	SyncIntervalMin int      `json:"syncIntervalMin"` // set in the console; 0 = default (15)
+	LastInventoryAt int64    `json:"lastInventoryAt"`
 	Notice          Notice   `json:"notice"`
 }
 

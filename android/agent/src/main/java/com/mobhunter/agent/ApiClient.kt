@@ -92,5 +92,5 @@ class ApiClient(private val config: DeviceCredentials, private val signer: (Stri
 
 /** Avoids depending on generated BuildConfig (buildFeatures.buildConfig is off). */
 object BuildConfigShim {
-    const val VERSION = "1.5.0" // keep in step with versionName
+    const val VERSION = "1.6.0" // keep in step with versionName
 }

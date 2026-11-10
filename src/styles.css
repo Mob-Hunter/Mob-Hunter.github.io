@@ -730,3 +730,14 @@ th { font-family: var(--mono); letter-spacing: .08em; }
 .seg-sm button { padding: 6px 12px; }
 pre.cmd { white-space: pre-wrap; word-break: break-all; font-size: .8rem; }
 .toolbar select { width: auto; flex: 0 1 auto; }
+
+/* Inventory */
+.inv-grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); margin-top: 8px; }
+.inv-grid h3 { margin: 0 0 6px; font-size: .78rem; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.kv-row { display: contents; }
+.software-list { list-style: none; margin: 0; padding: 0; }
+.software-list > li { border-bottom: 1px solid var(--border); }
+.software-row { display: flex; width: 100%; justify-content: space-between; gap: 12px; align-items: center; padding: 10px 4px; background: none; border: 0; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.software-row:hover { background: var(--surface-2); }
+.software-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.software-versions { margin: 0 0 10px; padding-left: 18px; font-size: .9rem; }

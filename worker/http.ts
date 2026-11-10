@@ -187,6 +187,8 @@ export function createApp(cfg: HttpConfig) {
   });
   app.post('/admin/devices/:id/incidents', async (c) => c.json(await c.var.backend.reportIncident(c.var.sid, c.req.param('id'), await body(c)), 201));
   app.get('/admin/incidents', (c) => c.json(c.var.backend.listIncidents(c.var.sid)));
+  app.get('/admin/devices/:id/inventory', (c) => c.json(c.var.backend.getInventory(c.var.sid, c.req.param('id'))));
+  app.get('/admin/software', (c) => c.json(c.var.backend.listSoftware(c.var.sid, c.req.query('q') ?? '')));
   app.get('/admin/threats', (c) => c.json(c.var.backend.getThreatLandscape(c.var.sid)));
   app.post('/admin/devices/:id/threats/:key/accept', async (c) => c.json(await c.var.backend.acceptThreat(c.var.sid, c.req.param('id'), c.req.param('key'), await body(c))));
   app.delete('/admin/devices/:id/threats/:key/accept', async (c) => c.json(await c.var.backend.reopenThreat(c.var.sid, c.req.param('id'), c.req.param('key'))));
@@ -315,6 +317,7 @@ export function createApp(cfg: HttpConfig) {
   app.get('/v1/commands/pending', (c) => deviceCall(c, (a) => c.var.backend.pendingCommands(a)));
   app.post('/v1/commands/:id/result', (c) => deviceCall(c, (a, b) => c.var.backend.commandResult(a, c.req.param('id'), b)));
   app.post('/v1/location/batch', (c) => deviceCall(c, (a, b) => c.var.backend.locationBatch(a, b)));
+  app.post('/v1/inventory', (c) => deviceCall(c, (a, b) => c.var.backend.reportInventory(a, b)));
   app.post('/v1/push-token', (c) => deviceCall(c, (a, b) => c.var.backend.registerPushToken(a, b)));
 
   return app;

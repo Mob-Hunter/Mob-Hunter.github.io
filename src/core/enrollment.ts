@@ -63,14 +63,15 @@ export function defaultPolicy(): DevicePolicy {
 
 /** Policy text the employee acknowledges at enrolment (Non-negotiable #1). */
 export const COLLECTION_NOTICE = {
-  version: '2026-11-v3',
+  version: '2026-11-v4',
   title: 'Company device notice',
   collected: [
     'Device identifiers: serial number, model, OS version and security patch level.',
     'Device health: battery level, health and temperature; free storage; Play Integrity verdict.',
     'Security settings, to detect threats: whether a screen lock, encryption, firewall and malware protection are on, whether USB debugging, developer options or unknown app sources are enabled, whether the Wi-Fi network is encrypted (not its name), and how many OS updates are waiting.',
     'Location — only when a Location Operator or the Super Admin requests it against a ticket (you get a notification every time), while the device is in Lost Mode, or, if your policy enables it, every 15+ minutes during working hours with a persistent notification.',
-    'The list of company apps installed by the management service.',
+    'Device inventory: hardware (model, processor, memory, disks), operating system and update level, network adapters (names, MAC and IP addresses), and configuration settings such as encryption, firewall, remote access and administrator accounts.',
+    'On company computers, the list of installed programs (name, version, publisher). On phones, only the company apps installed by the management service.',
   ],
   notCollected: [
     'Messages, e-mail, call content, photos, files, browsing history.',

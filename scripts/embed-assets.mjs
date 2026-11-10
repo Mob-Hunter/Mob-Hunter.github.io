@@ -7,8 +7,9 @@
  */
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { extname, join, relative } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const root = new URL('..', import.meta.url).pathname;
+const root = fileURLToPath(new URL('..', import.meta.url));
 const dist = join(root, 'dist');
 const out = join(root, 'worker', 'generated', 'assets.ts');
 if (process.argv.includes('--if-missing') && existsSync(out)) process.exit(0);

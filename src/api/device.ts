@@ -60,6 +60,7 @@ export class LocalDeviceTransport implements DeviceTransport {
     else if (method === 'POST' && m) out = await b.commandResult(auth, m[1], payload as never);
     else if (method === 'POST' && path === '/v1/location/batch') out = await b.locationBatch(auth, payload as never);
     else if (method === 'POST' && path === '/v1/push-token') out = await b.registerPushToken(auth, payload as never);
+    else if (method === 'POST' && path === '/v1/inventory') out = await b.reportInventory(auth, payload);
     else throw new Error(`No such device route ${method} ${path}`);
     return wire(out) as T;
   }

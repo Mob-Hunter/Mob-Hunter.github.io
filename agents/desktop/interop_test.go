@@ -89,6 +89,21 @@ func TestInteropWithRealServer(t *testing.T) {
 		t.Fatalf("threats detected from posture: %v", keys)
 	}
 
+	// The full inventory was uploaded at enrolment (real collectors on this machine).
+	inv := must("GET", "/admin/devices/"+id+"/inventory", nil)
+	data := inv["data"].(map[string]any)
+	if data["os"].(map[string]any)["arch"] == "" || len(data["settings"].([]any)) == 0 || len(data["network"].([]any)) == 0 {
+		t.Fatalf("inventory incomplete: %v", data["os"])
+	}
+	first := inv["receivedAt"].(float64)
+	must("POST", "/admin/devices/"+id+"/commands", map[string]any{"type": "COLLECT_INVENTORY"})
+	if out, err := a.Poll(); err != nil || len(out) != 1 || out[0].Result != "succeeded" {
+		t.Fatalf("COLLECT_INVENTORY: %+v %v", out, err)
+	}
+	if again := must("GET", "/admin/devices/"+id+"/inventory", nil); again["receivedAt"].(float64) <= first {
+		t.Fatal("inventory not refreshed by COLLECT_INVENTORY")
+	}
+
 	// Phone-only commands are refused for a computer before they are ever signed.
 	if s, o, _ := admin("POST", "/admin/devices/"+id+"/commands", map[string]any{"type": "LOCATE", "ticket": "INC-1", "reason": "should be refused"}); s != 422 || o["error"] != "not_supported" {
 		t.Fatalf("LOCATE on a computer: %d %v", s, o)

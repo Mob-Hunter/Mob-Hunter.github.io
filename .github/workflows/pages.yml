@@ -63,6 +63,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: agents/desktop/go.mod
+          cache-dependency-path: agents/desktop/go.sum
       - name: Build and publish the desktop agent (Windows, Linux, macOS)
         run: agents/desktop/build.sh dist/downloads "$(grep -m1 'var Version' agents/desktop/main.go | cut -d'"' -f2)"
       - name: Downloads index page (GitHub Pages has no directory listings)

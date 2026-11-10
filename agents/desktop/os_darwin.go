@@ -159,3 +159,10 @@ func (s *macSystem) RemoveService() error {
 	}
 	return nil
 }
+
+func serviceStatus() string {
+	if _, err := run(10e9, "launchctl", "print", "system/com.mobhunter.agent"); err != nil {
+		return "launch daemon not loaded"
+	}
+	return "launch daemon com.mobhunter.agent is loaded"
+}

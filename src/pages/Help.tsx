@@ -68,8 +68,10 @@ const GUIDES: Guide[] = [
           <li>Read the notice to the employee and type “I understand”. A background service starts and the computer appears in Devices within a minute.</li>
         </ol>
         <p className="small muted">
-          Computers support lock, message, restart and policy sync, and report security settings for the threat landscape. Locate, Lost Mode, ring, app installs and wipe are
-          phone-only. <code>mob-hunter-agent posture</code> shows exactly what a computer reports; <code>mob-hunter-agent uninstall</code> removes it locally.
+          Computers support lock, message, restart, inventory and policy sync, and report security settings for the threat landscape. Locate, Lost Mode, ring, app installs and
+          wipe are phone-only. On Windows the agent runs as the <strong>Mob Hunter Agent</strong> service (Services app, automatic start, restarted if it stops) and logs to Event
+          Viewer → Windows Logs → Application (source <code>MobHunterAgent</code>). On every OS it also keeps a log: <code>mob-hunter-agent logs</code>.{' '}
+          <code>mob-hunter-agent status</code>, <code>inventory</code> and <code>posture</code> show exactly what it reports; <code>uninstall</code> removes it.
         </p>
       </>
     ),
@@ -225,6 +227,26 @@ const GUIDES: Guide[] = [
         change creates a new policy version, is recorded in the audit log and is pushed to the phone. Restrictions are enforced on company (factory-reset)
         phones; a phone enrolled without a factory reset shows a note instead.
       </p>
+    ),
+  },
+  {
+    id: 'inventory',
+    title: 'Device inventory and installed software',
+    icon: '▦',
+    summary: 'Hardware, OS, disks, network, settings and programs for every device.',
+    keywords: 'inventory hardware cpu memory ram disk storage network mac ip settings software programs installed versions asset',
+    body: (
+      <ul>
+        <li>
+          Open a device and use the <strong>Inventory</strong> card: Overview (system, OS, hardware), Settings (security, accounts, remote access, updates…), Storage, Network
+          and Software. <strong>Refresh inventory</strong> asks the device to collect it again now.
+        </li>
+        <li>
+          <Link to="/software">Software inventory</Link> searches every program across the fleet and shows which devices have which version — useful to find outdated or
+          unwanted software.
+        </li>
+        <li>Devices upload their inventory after enrolment and every 6 hours. Phones list only company catalogue apps, never personal apps.</li>
+      </ul>
     ),
   },
   {

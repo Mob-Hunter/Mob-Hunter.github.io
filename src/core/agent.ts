@@ -13,7 +13,7 @@ import { CommandVerifier, type VerifyFailure } from './commands';
 import { fingerprint, generateEd25519, randomId, signEd25519 } from './crypto';
 import { COLLECTION_NOTICE } from './enrollment';
 import { lostFixIntervalMs } from './tracking';
-import type { DeviceCertificate, DevicePolicy, LocationFix, ProvisioningPayload, SignedCommand, SecurityPosture, Telemetry } from './types';
+import type { DeviceCertificate, DeviceInventory, DevicePolicy, LocationFix, ProvisioningPayload, SignedCommand, SecurityPosture, Telemetry } from './types';
 import { LocalDeviceTransport, type DeviceSigner, type DeviceTransport } from '../api/device';
 
 export interface AgentNotification {
@@ -190,6 +190,70 @@ export class SimulatedAgent {
     };
   }
 
+  /** A realistic inventory for the simulated device (what the real agents collect). */
+  inventoryData(): DeviceInventory {
+    const p = this.state.platform ?? 'android';
+    const hw = this.state.hardware;
+    const now = this.clock();
+    const desktop = p !== 'android';
+    const t = this.telemetry();
+    const s = t.security ?? {};
+    const settings: DeviceInventory['settings'] = [
+      { category: 'Security', name: 'Screen lock', value: s.screenLock === false ? 'None' : 'PIN / password' },
+      { category: 'Security', name: 'Storage encryption', value: s.encrypted === false ? 'Off' : 'On' },
+      ...(desktop ? [{ category: 'Security', name: 'Firewall', value: s.firewall === false ? 'Off' : 'On' }] : [{ category: 'Security', name: 'USB debugging', value: s.usbDebugging ? 'On' : 'Off' }]),
+      { category: 'Updates', name: desktop ? 'Last update installed' : 'Security patch level', value: t.patchLevel },
+      ...(p === 'windows'
+        ? [
+            { category: 'Security', name: 'User Account Control', value: 'On' },
+            { category: 'Remote access', name: 'Remote Desktop', value: 'Disabled' },
+            { category: 'Accounts', name: 'Local administrators', value: 'Administrator, IT-Admin' },
+            { category: 'Network', name: 'Domain', value: 'Workgroup: WORKGROUP' },
+          ]
+        : p === 'linux'
+          ? [
+              { category: 'Remote access', name: 'SSH server', value: 'Running (ssh)' },
+              { category: 'Accounts', name: 'Administrators (sudo/wheel)', value: 'admin' },
+              { category: 'Updates', name: 'Automatic updates', value: 'On (unattended-upgrades)' },
+            ]
+          : [
+              { category: 'Display', name: 'Screen timeout', value: '30 s' },
+              { category: 'System', name: 'Developer options', value: s.devOptions ? 'On' : 'Off' },
+              { category: 'Management', name: 'Mode', value: 'Company device (device owner)' },
+            ]),
+    ];
+    const software: DeviceInventory['software'] =
+      p === 'windows'
+        ? [
+            { name: 'Google Chrome', version: '131.0.6778.86', publisher: 'Google LLC' },
+            { name: 'Microsoft 365 Apps for enterprise', version: '16.0.18129', publisher: 'Microsoft Corporation' },
+            { name: 'Mob Hunter Agent', version: '2.0.0', publisher: 'Mob Hunter' },
+            { name: '7-Zip 23.01 (x64)', version: '23.01', publisher: 'Igor Pavlov' },
+          ]
+        : p === 'linux'
+          ? [
+              { name: 'openssh-server', version: '1:9.6p1-3ubuntu13.5', publisher: 'Ubuntu Developers' },
+              { name: 'docker-ce', version: '5:27.3.1-1', publisher: 'Docker Inc.' },
+              { name: 'git', version: '1:2.43.0-1ubuntu7.1', publisher: 'Ubuntu Developers' },
+            ]
+          : this.state.installedApps.map((a) => ({ name: a, publisher: 'Company catalogue' }));
+    return {
+      collectedAt: now,
+      agentVersion: desktop ? '2.0.0' : '1.6.0',
+      system: { hostname: desktop ? `${hw.model.split(' ')[0].toUpperCase()}-${hw.serial.slice(-4)}` : undefined, manufacturer: hw.model.split(' ')[0], model: hw.model, serial: hw.serial, chassis: desktop ? (p === 'linux' ? 'Mini PC' : 'Laptop') : 'Phone' },
+      os: { name: hw.os, arch: desktop ? 'amd64' : 'arm64', lastBoot: new Date(now - 3 * 86_400_000).toISOString(), timezone: 'Asia/Colombo' },
+      hardware: { cpu: desktop ? 'Intel(R) Core(TM) Ultra 7 165U' : 'Octa-core', cores: desktop ? 12 : 8, threads: desktop ? 14 : 8, memoryGb: desktop ? 32 : 8, tpm: desktop ? 'Present, ready' : undefined },
+      disks: [{ mount: desktop ? (p === 'windows' ? 'C:' : '/') : '/data', fs: p === 'windows' ? 'NTFS' : p === 'linux' ? 'ext4' : 'f2fs', sizeGb: t.storageTotalGb, freeGb: t.storageFreeGb, encrypted: s.encrypted !== false }],
+      network: [{ name: desktop ? (p === 'windows' ? 'Wi-Fi' : 'enp1s0') : 'wlan0', mac: '3c:22:fb:' + hw.serial.slice(-6).toLowerCase().replace(/(..)(?=.)/g, '$1:'), ipv4: ['10.20.4.' + (10 + (hw.serial.charCodeAt(1) % 200))], up: true }],
+      settings,
+      software,
+    };
+  }
+
+  async sendInventory(): Promise<void> {
+    await this.call('POST', '/v1/inventory', this.inventoryData());
+  }
+
   async checkin(): Promise<void> {
     if (!this.enrolled) throw new Error('Not enrolled');
     const body = {
@@ -338,6 +402,11 @@ export class SimulatedAgent {
         // Audible and visible: the phone rings at full volume and says why, so it is never covert.
         this.notify({ channel: 'management', importance: 'high', title: 'Your IT team is ringing this phone', text: 'This sound helps find a misplaced phone. Tap to stop it.', persistent: false });
         await this.postResult(p.id, { status: 'succeeded', detail: 'Rang for 30 s at full volume' });
+        return 'succeeded';
+      }
+      case 'COLLECT_INVENTORY': {
+        await this.sendInventory();
+        await this.postResult(p.id, { status: 'succeeded', detail: 'Inventory collected and uploaded' });
         return 'succeeded';
       }
       case 'RELEASE': {
