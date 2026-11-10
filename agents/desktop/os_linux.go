@@ -228,3 +228,11 @@ func (s *linuxSystem) RemoveService() error {
 	}
 	return nil
 }
+
+func serviceStatus() string {
+	out, _ := run(10e9, "systemctl", "is-active", "mob-hunter-agent")
+	if out == "" {
+		return "service not installed"
+	}
+	return "systemd unit mob-hunter-agent is " + out
+}

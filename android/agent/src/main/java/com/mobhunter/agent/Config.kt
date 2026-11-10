@@ -58,6 +58,17 @@ class Config(context: Context) : DeviceCredentials {
         get() = p.getInt("syncIntervalMin", 15)
         set(v) = p.edit().putInt("syncIntervalMin", v).apply()
 
+    var lastInventoryAt: Long
+        get() = p.getLong("lastInventoryAt", 0)
+        set(v) = p.edit().putLong("lastInventoryAt", v).apply()
+    /** Packages installed from the company catalogue (the only apps the inventory reports on phones). */
+    fun installedCatalogueApps(): Set<String> = p.getStringSet("catalogueApps", emptySet())!!.toSet()
+    fun rememberCatalogueApp(pkg: String, installed: Boolean) {
+        val s = installedCatalogueApps().toMutableSet()
+        if (installed) s += pkg else s -= pkg
+        p.edit().putStringSet("catalogueApps", s).apply()
+    }
+
     var lastContinuousAt: Long
         get() = p.getLong("lastContinuousAt", 0)
         set(v) = p.edit().putLong("lastContinuousAt", v).apply()

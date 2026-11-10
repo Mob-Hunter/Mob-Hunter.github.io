@@ -173,8 +173,26 @@ export interface Device {
   tags?: string[];
   assetTag?: string | null;
   notes?: string | null;
+  /** Last full inventory the agent uploaded (hardware, OS, disks, network, settings, programs). */
+  inventory?: { receivedAt: number; data: DeviceInventory } | null;
   /** What the agent reports it can do right now (permissions the user granted). */
   capabilities?: DeviceCapabilities | null;
+}
+
+/**
+ * Device configuration snapshot. Hardware, OS, storage, network adapters, configuration settings and,
+ * on computers, installed programs (name, version, publisher). Never files, content or usage.
+ */
+export interface DeviceInventory {
+  collectedAt: number;
+  agentVersion: string;
+  system: { hostname?: string; manufacturer?: string; model?: string; serial?: string; firmware?: string; chassis?: string };
+  os: { name?: string; version?: string; build?: string; arch?: string; kernel?: string; installDate?: string; lastBoot?: string; timezone?: string };
+  hardware: { cpu?: string; cores?: number; threads?: number; memoryGb?: number; tpm?: string };
+  disks: { mount: string; fs?: string; sizeGb: number; freeGb: number; encrypted?: boolean }[];
+  network: { name: string; mac?: string; ipv4?: string[]; ipv6?: string[]; up: boolean }[];
+  settings: { category: string; name: string; value: string }[];
+  software: { name: string; version?: string; publisher?: string }[];
 }
 
 export type ManagementMode = 'device_owner' | 'standard';

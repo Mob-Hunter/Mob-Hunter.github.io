@@ -82,6 +82,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: agents/desktop/go.mod
+          cache-dependency-path: agents/desktop/go.sum
       - name: Vet (every OS) and unit tests
         working-directory: agents/desktop
         run: |
@@ -99,6 +100,36 @@ jobs:
           name: mob-hunter-desktop-agent
           path: desktop-out/
           retention-days: 14
+
+  desktop-service:
+    name: Desktop agent service on ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: agents/desktop/go.mod
+          cache-dependency-path: agents/desktop/go.sum
+      - name: Unit tests on this OS
+        working-directory: agents/desktop
+        run: go test ./...
+      - name: Build the agent
+        working-directory: agents/desktop
+        shell: bash
+        run: go build -o "$RUNNER_TEMP/mob-hunter-agent$([ "$RUNNER_OS" = Windows ] && echo .exe)" .
+      - name: Real service end to end (install, run, inventory, commands, logs, release)
+        shell: bash
+        run: node e2e/desktop-service.mjs "$RUNNER_TEMP/mob-hunter-agent$([ "$RUNNER_OS" = Windows ] && echo .exe)"
 
   codeql:
     runs-on: ubuntu-latest

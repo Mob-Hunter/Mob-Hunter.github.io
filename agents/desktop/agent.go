@@ -149,7 +149,13 @@ func (a *Agent) Enrol(link EnrolLink, accept func(title string, collected, notCo
 		return err
 	}
 	_ = a.Sys.Notify("This computer is managed by your organisation", "Your IT team can see its security settings and health, lock it and send messages. They cannot see your files, screen, messages or browsing.")
-	return a.Checkin()
+	if err := a.Checkin(); err != nil {
+		return err
+	}
+	if err := a.SendInventory(); err != nil {
+		a.logf("first inventory upload failed (retried later): %v", err)
+	}
+	return nil
 }
 
 func (a *Agent) now() time.Time {
@@ -192,6 +198,24 @@ func (a *Agent) Checkin() error {
 	}
 	a.logf("checked in: state %s, policy v%d, next in %s", res.State, res.PolicyVersion, a.Cfg.syncInterval())
 	return saveConfig(a.Dir, a.Cfg)
+}
+
+// inventoryEvery is how often the full inventory is re-sent (it is also sent on request from the console).
+const inventoryEvery = 6 * time.Hour
+
+// SendInventory collects the full device inventory and uploads it.
+func (a *Agent) SendInventory() error {
+	inv := collectInventory(a.Sys)
+	if err := a.API.call("POST", "/v1/inventory", inv, nil); err != nil {
+		return err
+	}
+	a.Cfg.LastInventoryAt = a.now().UnixMilli()
+	a.logf("inventory sent: %d disks, %d network adapters, %d settings, %d programs", len(inv.Disks), len(inv.Network), len(inv.Settings), len(inv.Software))
+	return saveConfig(a.Dir, a.Cfg)
+}
+
+func (a *Agent) inventoryDue() bool {
+	return a.now().Sub(time.UnixMilli(a.Cfg.LastInventoryAt)) >= inventoryEvery
 }
 
 // Outcome of one command, for logs and tests.
@@ -273,6 +297,8 @@ func (a *Agent) execute(c *Command) string {
 		}
 		_ = saveConfig(a.Dir, a.Cfg)
 		return report(nil, fmt.Sprintf("Policy v%d received; phone restrictions do not apply to computers", p.Policy.Version))
+	case "COLLECT_INVENTORY":
+		return report(a.SendInventory(), "Inventory collected and uploaded")
 	case "REBOOT":
 		if !a.Sys.Privileged() {
 			_ = a.result(c.ID, "rejected", "Reboot needs the agent to run as a system service")
@@ -327,6 +353,11 @@ func (a *Agent) Run(stop <-chan struct{}) {
 				}
 			} else {
 				lastCheckin = time.Now()
+				if a.inventoryDue() {
+					if err := a.SendInventory(); err != nil {
+						a.logf("inventory upload failed: %v", err)
+					}
+				}
 			}
 		}
 		if _, err := a.Poll(); err != nil {

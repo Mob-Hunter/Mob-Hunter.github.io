@@ -298,6 +298,7 @@ export class Runtime {
     const agent = this.agentFor(newAgentFromProvisioning(provisioning, { autoPull: opts.autoPull ?? true, ...opts.seed }));
     await agent.enroll();
     await agent.checkin(); // like the real agent: first check-in right after enrolment
+    await agent.sendInventory();
     this.agents.set(agent.state.simId, agent);
     this.saveAgents();
     return agent;

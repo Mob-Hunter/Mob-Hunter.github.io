@@ -53,6 +53,7 @@ import type {
   Incident,
   Platform,
   SecurityPosture,
+  DeviceInventory,
   ThreatEvent,
   ThreatSeverity,
   ThreatState,
@@ -142,7 +143,9 @@ class RateLimiter {
   }
 }
 
-export interface DeviceView extends Omit<Device, 'transparencyKey' | 'cert'> {
+export interface DeviceView extends Omit<Device, 'transparencyKey' | 'cert' | 'inventory'> {
+  /** when the last inventory arrived (fetch it with getInventory) */
+  inventoryAt: number | null;
   displayName: string;
   certSerial: string;
   certNotAfter: number;
@@ -500,6 +503,53 @@ export class Backend {
 
   // ------------------------------------------------------------------ admin: devices
 
+  // ------------------------------------------------------------------ inventory
+
+  /** POST /v1/inventory — the agent uploads its full configuration snapshot (bounded and sanitised). */
+  async reportInventory(auth: DeviceAuth, body: unknown): Promise<{ ok: true }> {
+    const d = await this.authenticateDevice('POST', '/v1/inventory', body, auth);
+    d.inventory = { receivedAt: this.clock(), data: sanitiseInventory(body) };
+    this.persist();
+    return { ok: true };
+  }
+
+  /** GET /admin/devices/{id}/inventory */
+  getInventory(sessionId: string, deviceId: string): { receivedAt: number; data: DeviceInventory } | null {
+    const { user } = this.requireSession(sessionId);
+    this.guard(user, 'device.read');
+    const d = this.findDevice(deviceId);
+    return d.inventory ? structuredClone(d.inventory) : null;
+  }
+
+  /** GET /admin/software — installed programs across the fleet, with the devices that have each version. */
+  listSoftware(sessionId: string, q = ''): { name: string; publisher: string; deviceCount: number; versions: { version: string; devices: { id: string; name: string; platform: Platform }[] }[] }[] {
+    const { user } = this.requireSession(sessionId);
+    this.guard(user, 'device.read');
+    const term = q.trim().toLowerCase();
+    const map = new Map<string, { name: string; publisher: string; versions: Map<string, { id: string; name: string; platform: Platform }[]> }>();
+    for (const d of this.state.devices) {
+      if (!d.inventory || ['retired', 'wiped', 'released'].includes(d.state)) continue;
+      for (const a of d.inventory.data.software) {
+        if (term && !`${a.name} ${a.publisher ?? ''}`.toLowerCase().includes(term)) continue;
+        const key = a.name.toLowerCase();
+        const e = map.get(key) ?? { name: a.name, publisher: a.publisher ?? '', versions: new Map<string, { id: string; name: string; platform: Platform }[]>() };
+        const list = e.versions.get(a.version ?? '') ?? [];
+        if (!list.some((x) => x.id === d.id)) list.push({ id: d.id, name: displayName(d), platform: d.platform });
+        e.versions.set(a.version ?? '', list);
+        map.set(key, e);
+      }
+    }
+    return [...map.values()]
+      .map((e) => ({
+        name: e.name,
+        publisher: e.publisher,
+        deviceCount: new Set([...e.versions.values()].flat().map((x) => x.id)).size,
+        versions: [...e.versions].map(([version, devices]) => ({ version, devices })).sort((a, b) => b.devices.length - a.devices.length),
+      }))
+      .sort((a, b) => b.deviceCount - a.deviceCount || a.name.localeCompare(b.name))
+      .slice(0, 500);
+  }
+
   // ------------------------------------------------------------------ threat detection
 
   private get threatState(): ThreatState {
@@ -685,9 +735,10 @@ export class Backend {
   }
 
   private deviceView(d: Device): DeviceView {
-    const { transparencyKey: _t, cert, ...rest } = d;
+    const { transparencyKey: _t, cert, inventory, ...rest } = d;
     return {
       ...structuredClone(rest),
+      inventoryAt: inventory?.receivedAt ?? null,
       displayName: displayName(d),
       certSerial: cert.serial,
       certNotAfter: cert.notAfter,
@@ -2202,6 +2253,54 @@ function sanitiseTelemetry(t: Telemetry): Telemetry {
   };
 }
 
+const cut = (v: unknown, n: number) => (typeof v === 'string' ? v.replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, n) : undefined);
+const num = (v: unknown, max: number) => (typeof v === 'number' && Number.isFinite(v) ? Math.min(max, Math.max(0, Math.round(v * 10) / 10)) : undefined);
+const pick = <T extends object>(o: unknown, keys: (keyof T)[], n = 120): T => {
+  const src = (o && typeof o === 'object' ? o : {}) as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  for (const k of keys) {
+    const v = src[k as string];
+    if (typeof v === 'string') out[k as string] = cut(v, n);
+    else if (typeof v === 'number') out[k as string] = num(v, 1e7);
+  }
+  return out as T;
+};
+const arr = (v: unknown, max: number): unknown[] => (Array.isArray(v) ? v.slice(0, max) : []);
+
+/** Keeps only known inventory fields, with bounded sizes, from whatever the agent sent. */
+export function sanitiseInventory(b: unknown): DeviceInventory {
+  const o = (b && typeof b === 'object' ? b : {}) as Record<string, unknown>;
+  if (JSON.stringify(o).length > 900_000) throw new ApiError(413, 'too_large', 'Inventory too large');
+  return {
+    collectedAt: typeof o.collectedAt === 'number' ? o.collectedAt : 0,
+    agentVersion: cut(o.agentVersion, 24) ?? '',
+    system: pick(o.system, ['hostname', 'manufacturer', 'model', 'serial', 'firmware', 'chassis']),
+    os: pick(o.os, ['name', 'version', 'build', 'arch', 'kernel', 'installDate', 'lastBoot', 'timezone']),
+    hardware: pick(o.hardware, ['cpu', 'cores', 'threads', 'memoryGb', 'tpm']),
+    disks: arr(o.disks, 32).map((x) => {
+      const d = (x ?? {}) as Record<string, unknown>;
+      return { mount: cut(d.mount, 120) ?? '?', fs: cut(d.fs, 20), sizeGb: num(d.sizeGb, 1e6) ?? 0, freeGb: num(d.freeGb, 1e6) ?? 0, ...(typeof d.encrypted === 'boolean' ? { encrypted: d.encrypted } : {}) };
+    }),
+    network: arr(o.network, 32).map((x) => {
+      const n = (x ?? {}) as Record<string, unknown>;
+      const ips = (v: unknown) => arr(v, 16).map((s) => cut(s, 45)).filter((s): s is string => !!s);
+      return { name: cut(n.name, 60) ?? '?', mac: cut(n.mac, 32), ipv4: ips(n.ipv4), ipv6: ips(n.ipv6), up: n.up === true };
+    }),
+    settings: arr(o.settings, 300)
+      .map((x) => {
+        const s = (x ?? {}) as Record<string, unknown>;
+        return { category: cut(s.category, 40) ?? 'Other', name: cut(s.name, 80) ?? '', value: cut(s.value, 300) ?? '' };
+      })
+      .filter((s) => s.name),
+    software: arr(o.software, 3000)
+      .map((x) => {
+        const a = (x ?? {}) as Record<string, unknown>;
+        return { name: cut(a.name, 160) ?? '', version: cut(a.version, 60), publisher: cut(a.publisher, 120) };
+      })
+      .filter((a) => a.name),
+  };
+}
+
 function sanitiseSecurity(s: SecurityPosture): SecurityPosture {
   const out: SecurityPosture = {};
   const flags = ['compromised', 'devOptions', 'usbDebugging', 'unknownSources', 'screenLock', 'encrypted', 'firewall', 'antivirus', 'secureBoot', 'openWifi'] as const;
@@ -2351,7 +2450,7 @@ export { can };
 const DEVICE_OWNER_ONLY: ReadonlySet<CommandType> = new Set(['WIPE', 'REBOOT', 'INSTALL_APP', 'UNINSTALL_APP']);
 
 /** What the desktop agent (Windows, Linux, macOS) can run. LOCATE, Lost Mode, ring, apps and wipe are phone-only. */
-const DESKTOP_COMMANDS: ReadonlySet<CommandType> = new Set(['LOCK', 'SYNC_POLICY', 'MESSAGE', 'REBOOT', 'RELEASE']);
+const DESKTOP_COMMANDS: ReadonlySet<CommandType> = new Set(['LOCK', 'SYNC_POLICY', 'MESSAGE', 'REBOOT', 'RELEASE', 'COLLECT_INVENTORY']);
 
 /** Why a command cannot run on this device, or null. Keeps admins from queuing commands that can only fail. */
 export function unsupportedReason(d: Pick<Device, 'managementMode' | 'capabilities'> & { platform?: Platform }, type: CommandType): string | null {
@@ -2383,7 +2482,7 @@ export type PolicyPatch = Partial<
 >;
 
 /** Commands that may be sent to many phones at once. Ticketed / destructive ones stay one-by-one. */
-export const BULK_COMMANDS: ReadonlySet<CommandType> = new Set(['LOCK', 'SYNC_POLICY', 'REBOOT', 'MESSAGE', 'RING', 'INSTALL_APP', 'UNINSTALL_APP']);
+export const BULK_COMMANDS: ReadonlySet<CommandType> = new Set(['LOCK', 'SYNC_POLICY', 'REBOOT', 'MESSAGE', 'RING', 'INSTALL_APP', 'UNINSTALL_APP', 'COLLECT_INVENTORY']);
 
 /** Tags: up to 10, each 1–30 letters, digits, spaces, - or _; trimmed, de-duplicated (case-insensitive). */
 export function cleanTags(tags: unknown): string[] {

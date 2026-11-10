@@ -58,6 +58,13 @@ Both modes run the same backend code (`src/core/backend.ts`), so every rule is t
   - Super Admin sets the organisation default in Settings. A device or a selection of devices can override it, and every change is audited.
   - Agents receive the interval in each check-in response and reschedule themselves. Android uses WorkManager, with a minimum of 15 minutes. The desktop agent uses its service loop, which still polls for commands every minute.
   - "Online" and "stale" are judged against each device's own interval.
+- **Device inventory:** each device reports hardware, operating system, disks, network adapters, configuration settings and, on computers, installed programs. This is the `COLLECT_INVENTORY` command, plus an automatic upload every 6 hours. Each device page has Inventory tabs, and a fleet-wide Software inventory page searches every program and version.
+- **Desktop agent as a real service:**
+  - On Windows, the `MobHunterAgent` service runs as LocalSystem with automatic delayed start. The Service Control Manager restarts it on failure, and it logs to the Event Log.
+  - Linux uses a systemd unit and macOS a launch daemon.
+  - Every OS keeps rotating log files (`mob-hunter-agent logs`).
+  - CI installs and exercises the real service on Windows, macOS and Linux runners.
+- **Roadmap:** [docs/ROADMAP.md](docs/ROADMAP.md) compares Mob Hunter with the leading MDM/UEM products and lists the next steps.
 - **iOS:** needs an Apple MDM push certificate (APNs) and Apple Business Manager, so iOS enrolment is not offered until those exist. The enrolment page and Help explain the requirements.
 - Compliance view: stale check-ins, patch age, Play Integrity, battery, storage, acknowledgement and assignment. Inventory exports to CSV, with spreadsheet formula injection neutralised.
 - Employees: add, import from HR CSV, leaver offboarding, and DSAR export (Security only, ticketed and audited).

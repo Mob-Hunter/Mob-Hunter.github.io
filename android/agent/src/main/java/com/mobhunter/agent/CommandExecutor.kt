@@ -91,12 +91,17 @@ class CommandExecutor(private val ctx: Context, private val config: Config, priv
                 }
                 "INSTALL_APP" -> {
                     val r = AppInstaller.install(ctx, params.getString("packageName"), params.getString("url"), params.getString("sha256"))
+                    if (r.isEmpty()) config.rememberCatalogueApp(params.getString("packageName"), true)
                     result(id, if (r.isEmpty()) "succeeded" else "failed", r.ifEmpty { "Install session committed for ${params.getString("packageName")}" })
+                }
+                "COLLECT_INVENTORY" -> {
+                    Agent(ctx).sendInventory()
+                    result(id, "succeeded", "Inventory collected and uploaded")
                 }
                 "UNINSTALL_APP" -> {
                     val pkg = params.getString("packageName")
                     when (val r = AppRemover.uninstall(ctx, pkg)) {
-                        "" -> result(id, "succeeded", "Uninstall requested for $pkg")
+                        "" -> { config.rememberCatalogueApp(pkg, false); result(id, "succeeded", "Uninstall requested for $pkg") }
                         "NOT_INSTALLED" -> result(id, "succeeded", "$pkg was not installed")
                         else -> result(id, "failed", r)
                     }

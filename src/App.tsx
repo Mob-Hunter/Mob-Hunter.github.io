@@ -23,6 +23,7 @@ import { PrivacyPage } from './pages/Privacy';
 import { DownloadPage, AppsPage } from './pages/Download';
 import { HelpPage } from './pages/Help';
 import { ThreatsPage } from './pages/Threats';
+import { SoftwarePage } from './pages/Inventory';
 import { CommandPalette, type PaletteEntry } from './ui/palette';
 import { getTheme, setTheme, type Theme } from './ui/theme';
 
@@ -32,6 +33,7 @@ const NAV: NavItem[] = [
   { group: 'Fleet', to: '/', label: 'Overview', icon: '◎', keywords: 'home dashboard' },
   { group: 'Fleet', to: '/devices', label: 'Devices', icon: '▤', keywords: 'phones fleet list' },
   { group: 'Fleet', to: '/enrol', label: 'Add devices', icon: '＋', perm: 'enrollment.create', keywords: 'enrol enroll qr new phone' },
+  { group: 'Fleet', to: '/software', label: 'Software inventory', icon: '▦', keywords: 'apps programs installed versions inventory packages' },
   { group: 'Fleet', to: '/compliance', label: 'Compliance', icon: '✓', keywords: 'health patch battery issues' },
   { group: 'Security', to: '/threats', label: 'Threat landscape', icon: '⚠', perm: 'threat.read', keywords: 'mtd mobile threat defense risk root jailbreak malware patch encryption vulnerability security' },
   { group: 'Find & recover', to: '/incidents', label: 'Lost & stolen', icon: '⚑', keywords: 'incident tracking lost mode' },
@@ -219,6 +221,7 @@ export function App() {
         <Route path="/devices/:id" element={guarded(<DeviceDetailPage />)} />
         <Route path="/compliance" element={guarded(<CompliancePage />)} />
         <Route path="/threats" element={guarded(<ThreatsPage />)} />
+        <Route path="/software" element={guarded(<SoftwarePage />)} />
         <Route path="/enrol" element={guarded(<EnrolPage />)} />
         <Route path="/locations" element={guarded(<LocationsPage />)} />
         <Route path="/incidents" element={guarded(<IncidentsPage />)} />

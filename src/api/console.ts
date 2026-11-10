@@ -24,6 +24,8 @@ export type BulkResult = Awaited<ReturnType<Backend['issueBulkCommand']>>;
 export type LocationTicket = ReturnType<Backend['listLocationTickets']>[number];
 export type DeleteResult = Awaited<ReturnType<Backend['deleteDevice']>>;
 export type { ThreatLandscape };
+export type InventoryRecord = NonNullable<ReturnType<Backend['getInventory']>>;
+export type SoftwareRow = ReturnType<Backend['listSoftware']>[number];
 export type IncidentSummary = ReturnType<Backend['listIncidents']>[number];
 export type IncidentTrack = Awaited<ReturnType<Backend['trackIncident']>>;
 export type ReportIncidentInput = Parameters<Backend['reportIncident']>[2];
@@ -56,6 +58,8 @@ export interface ConsoleApi {
   reportIncident(deviceId: string, input: ReportIncidentInput): Promise<IncidentRecord>;
   listIncidents(): Promise<IncidentSummary[]>;
   getThreatLandscape(): Promise<ThreatLandscape>;
+  getInventory(deviceId: string): Promise<InventoryRecord | null>;
+  listSoftware(q?: string): Promise<SoftwareRow[]>;
   acceptThreat(deviceId: string, key: string, input: { reason: string; days?: number }): Promise<DeviceView>;
   reopenThreat(deviceId: string, key: string): Promise<DeviceView>;
   trackIncident(id: string): Promise<IncidentTrack>;
@@ -170,6 +174,12 @@ export class LocalConsoleApi implements ConsoleApi {
   }
   async getThreatLandscape() {
     return this.b.getThreatLandscape(this.s);
+  }
+  async getInventory(deviceId: string) {
+    return this.b.getInventory(this.s, deviceId);
+  }
+  async listSoftware(q = '') {
+    return this.b.listSoftware(this.s, q);
   }
   acceptThreat(deviceId: string, key: string, input: { reason: string; days?: number }) {
     return this.b.acceptThreat(this.s, deviceId, key, input);
@@ -373,6 +383,12 @@ export class RemoteConsoleApi implements ConsoleApi {
   }
   getThreatLandscape() {
     return this.req<ThreatLandscape>('GET', '/admin/threats');
+  }
+  getInventory(deviceId: string) {
+    return this.req<InventoryRecord | null>('GET', `/admin/devices/${encodeURIComponent(deviceId)}/inventory`);
+  }
+  listSoftware(q = '') {
+    return this.req<SoftwareRow[]>('GET', `/admin/software${this.q({ q: q || undefined })}`);
   }
   acceptThreat(deviceId: string, key: string, input: { reason: string; days?: number }) {
     return this.req<DeviceView>('POST', `/admin/devices/${encodeURIComponent(deviceId)}/threats/${encodeURIComponent(key)}/accept`, input);

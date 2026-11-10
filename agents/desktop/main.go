@@ -20,7 +20,7 @@ import (
 )
 
 // Version is set at build time (-ldflags "-X main.Version=…").
-var Version = "1.1.0"
+var Version = "2.0.0"
 
 const usage = `Mob Hunter desktop agent %s
 
@@ -28,7 +28,10 @@ Usage:
   mob-hunter-agent enrol '<mobhunter://enrol?… link>' [--accept-notice] [--no-service]
   mob-hunter-agent acknowledge     read the employee notice and confirm it
   mob-hunter-agent status          show enrolment and the last check-in
-  mob-hunter-agent posture         print exactly what this computer reports
+  mob-hunter-agent posture         print the security settings this computer reports
+  mob-hunter-agent inventory       print the full device inventory sent to the console
+  mob-hunter-agent logs            show the last 200 log lines
+  mob-hunter-agent install-service install / upgrade the background service
   mob-hunter-agent sync            check in and run pending commands now
   mob-hunter-agent run             run in the foreground (what the service does)
   mob-hunter-agent uninstall       remove the service and this computer's credentials
@@ -39,7 +42,6 @@ or from an elevated PowerShell (Windows) to install the background service.
 `
 
 func main() {
-	logger := log.New(os.Stderr, "mob-hunter-agent: ", log.LstdFlags)
 	if len(os.Args) < 2 {
 		fmt.Printf(usage, Version)
 		os.Exit(2)
@@ -48,6 +50,9 @@ func main() {
 	if dir == "" {
 		dir = defaultDir()
 	}
+	// Every command logs to <data dir>/logs/agent.log (rotated); interactive commands also to the terminal.
+	logger, closer := newLogger(dir, os.Args[1] != "run" || isTerminal(), nil)
+	defer closer.Close()
 	cfg, err := loadConfig(dir)
 	if err != nil {
 		logger.Fatalf("reading %s: %v", configPath(dir), err)
@@ -103,6 +108,7 @@ func main() {
 			os.Exit(1)
 		}
 		fmt.Printf("Enrolled as %s with %s (policy v%d, notice %s acknowledged: %v, service mode: %v, checks in every %s)\n", cfg.DeviceID, cfg.Server, cfg.PolicyVersion, cfg.NoticeVersion, cfg.AcknowledgedAt > 0, cfg.Privileged, cfg.syncInterval())
+		fmt.Printf("%s · log: %s\n", serviceStatus(), logPath(dir))
 	case "sync":
 		mustEnrolled(a, logger)
 		if err := a.Checkin(); err != nil {
@@ -118,12 +124,31 @@ func main() {
 		fmt.Println("Synced.")
 	case "run":
 		mustEnrolled(a, logger)
-		stop := make(chan struct{})
-		sig := make(chan os.Signal, 1)
-		signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
-		go func() { <-sig; close(stop) }()
-		logger.Printf("agent %s running for %s", Version, a.Cfg.DeviceID)
-		a.Run(stop)
+		a.logf("agent %s running for %s (checks in every %s)", Version, a.Cfg.DeviceID, a.Cfg.syncInterval())
+		if err := runService(a, a.Run); err != nil {
+			logger.Fatal(err)
+		}
+	case "install-service":
+		// Re-installs or upgrades the background service for an enrolled computer (e.g. after updating the binary).
+		mustEnrolled(a, logger)
+		exe, _ := os.Executable()
+		if err := a.Sys.InstallService(exe); err != nil {
+			logger.Fatalf("installing the service: %v", err)
+		}
+		fmt.Println("Service installed and started:", serviceStatus())
+	case "logs":
+		lines, err := tailLog(dir, 200)
+		if err != nil {
+			logger.Fatalf("no log yet at %s: %v", logPath(dir), err)
+		}
+		for _, l := range lines {
+			fmt.Println(l)
+		}
+		fmt.Fprintf(os.Stderr, "\n(%s)\n", logPath(dir))
+	case "inventory":
+		// Transparency: prints the full device inventory exactly as it is sent to the console.
+		b, _ := json.MarshalIndent(collectInventory(a.Sys), "", "  ")
+		fmt.Println(string(b))
 	case "acknowledge":
 		mustEnrolled(a, logger)
 		n := a.Cfg.Notice
@@ -183,4 +208,19 @@ func confirmNotice(title string, collected, notCollected []string, preAccepted b
 	}
 	fmt.Println("Not acknowledged: the computer stays inactive until you run `mob-hunter-agent acknowledge`.")
 	return false
+}
+
+// runForeground runs the agent loop until Ctrl+C / SIGTERM.
+func runForeground(loop func(stop <-chan struct{})) error {
+	stop := make(chan struct{})
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
+	go func() { <-sig; close(stop) }()
+	loop(stop)
+	return nil
+}
+
+func isTerminal() bool {
+	fi, err := os.Stderr.Stat()
+	return err == nil && fi.Mode()&os.ModeCharDevice != 0
 }

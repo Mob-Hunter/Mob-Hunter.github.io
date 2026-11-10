@@ -31,6 +31,8 @@ export const COMMAND_TYPES = [
   'RING',
   /** Remove an app that was installed from the approved catalogue (company phones). */
   'UNINSTALL_APP',
+  /** Collect and upload the full device inventory now (hardware, OS, disks, network, settings, programs). */
+  'COLLECT_INVENTORY',
 ] as const;
 export type CommandType = (typeof COMMAND_TYPES)[number];
 
@@ -99,6 +101,7 @@ export const PERMISSIONS: Record<Permission, readonly Role[]> = {
   'command.MESSAGE': ['SUPER_ADMIN', 'DEVICE_ADMIN', 'HELPDESK'],
   'command.RING': ['SUPER_ADMIN', 'DEVICE_ADMIN', 'HELPDESK', 'LOCATION_OPERATOR'],
   'command.UNINSTALL_APP': ['SUPER_ADMIN', 'DEVICE_ADMIN'],
+  'command.COLLECT_INVENTORY': ['SUPER_ADMIN', 'DEVICE_ADMIN', 'HELPDESK'],
 };
 
 /** Commands that must carry a ticket reference (purpose limitation). */

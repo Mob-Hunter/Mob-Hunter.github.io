@@ -10,6 +10,7 @@ import { RiskMeter, SeverityBadge, ThreatActions } from './Threats';
 import { PLATFORM_ICON, PLATFORM_LABEL, isComputer } from '../ui/platform';
 import type { SecurityPosture } from '../core/types';
 import { SYNC_CHOICES, fmtInterval } from '../ui/sync';
+import { InventoryCard } from './Inventory';
 
 const COMMAND_HELP: Record<CommandType, string> = {
   LOCATE: 'One-off high-accuracy fix. The user always gets a notification.',
@@ -24,6 +25,7 @@ const COMMAND_HELP: Record<CommandType, string> = {
   MESSAGE: 'Shows your message to the employee as a notification on the phone.',
   RING: 'Plays an alarm at full volume for 30 seconds, even on silent — to find a phone nearby. The employee sees why.',
   UNINSTALL_APP: 'Removes an app that was installed from the approved catalogue. Personal apps can never be removed.',
+  COLLECT_INVENTORY: 'Collects the full inventory now: hardware, OS, disks, network, settings and (computers) installed programs.',
 };
 
 export function DeviceDetailPage() {
@@ -211,6 +213,8 @@ export function DeviceDetailPage() {
       </Card>
 
       <SyncCard key={`${device.id}-${device.policy.version}`} device={device} />
+
+      <InventoryCard device={device} />
 
       {canUpdate && <RenameCard key={device.id} device={device} employees={(employees ?? []).filter((e) => e.status !== 'leaver')} />}
 

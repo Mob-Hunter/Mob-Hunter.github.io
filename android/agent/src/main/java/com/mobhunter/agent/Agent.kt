@@ -64,6 +64,7 @@ class Agent(private val ctx: Context) {
             if (!enrollIfNeeded()) return
             checkin()
             pullAndExecute()
+            if (System.currentTimeMillis() - config.lastInventoryAt >= Inventory.EVERY_MS) sendInventory()
             AgentService.reconcile(ctx)
             config.lastError = null
         } catch (e: ApiException) {
@@ -78,6 +79,12 @@ class Agent(private val ctx: Context) {
             Log.w(TAG, "sync failed", e)
             config.lastError = e.message
         }
+    }
+
+    /** Uploads the device inventory (hardware, OS, storage, network, settings, catalogue apps). */
+    fun sendInventory() {
+        api.post("/v1/inventory", Inventory.collect(ctx, config))
+        config.lastInventoryAt = System.currentTimeMillis()
     }
 
     private fun checkin() {
