@@ -92,6 +92,8 @@ jobs:
         run: agents/desktop/interop.sh
       - name: Cross-compile
         run: agents/desktop/build.sh desktop-out
+      - name: Downloads index page renders from the published files
+        run: cp releases/android/* desktop-out/ && node scripts/downloads-index.mjs desktop-out https://example.test && grep -q 'mob-hunter-agent-windows-amd64.exe' desktop-out/index.html
       - uses: actions/upload-artifact@v4
         with:
           name: mob-hunter-desktop-agent
