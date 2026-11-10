@@ -111,7 +111,7 @@ func osInventory(inv *Inventory) {
 		set(inv, "Network", "Microsoft Entra ID (Azure AD) joined", map[bool]string{true: "Yes", false: "No"}[*w.AAD])
 	}
 	set(inv, "Security", "User Account Control", flag("uac", "On", "Off", ""))
-	set(inv, "Security", "Credential Guard / HVCI services", firstNonEmptyW(map[string]string{"": "None running"}[str("hvci")], str("hvci")))
+	set(inv, "Security", "Virtualization-based security services", vbsServices(str("hvci")))
 	set(inv, "Security", "LSA protection (RunAsPPL)", flag("lsaPpl", "On", "Off", "Off"))
 	set(inv, "Security", "Defender tamper protection", flag("tamper", "On", "Off", ""))
 	if v := str("avSigAge"); v != "" {
@@ -154,4 +154,19 @@ func chassisWin(codes string) string {
 	m := map[string]string{"3": "Desktop", "4": "Low-profile desktop", "6": "Mini tower", "7": "Tower", "8": "Portable", "9": "Laptop", "10": "Notebook", "13": "All-in-one", "14": "Sub-notebook", "23": "Rack server", "30": "Tablet", "31": "Convertible", "32": "Detachable", "35": "Mini PC", "1": "Virtual / other"}
 	first := strings.Split(codes, ",")[0]
 	return m[strings.TrimSpace(first)]
+}
+
+// vbsServices names Win32_DeviceGuard.SecurityServicesRunning codes (0 = none).
+func vbsServices(codes string) string {
+	names := map[string]string{"1": "Credential Guard", "2": "Memory integrity (HVCI)", "3": "System Guard Secure Launch", "4": "SMM firmware measurement", "5": "Kernel-mode hardware-enforced stack protection", "6": "Hypervisor-protected code integrity for kernel"}
+	var out []string
+	for _, c := range strings.Split(codes, ",") {
+		if n, ok := names[strings.TrimSpace(c)]; ok {
+			out = append(out, n)
+		}
+	}
+	if len(out) == 0 {
+		return "None running"
+	}
+	return strings.Join(out, ", ")
 }
