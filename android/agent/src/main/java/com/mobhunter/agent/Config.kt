@@ -53,6 +53,11 @@ class Config(context: Context) : DeviceCredentials {
         set(v) = p.edit().putLong("lastTrackingSyncAt", v).apply()
     val trackingActive: Boolean get() = lostMode && trackingIntervalSec > 0 && System.currentTimeMillis() < trackingUntil
 
+    /** Automatic check-in interval set in the console (minutes; Android allows 15 at the most often). */
+    var syncIntervalMin: Int
+        get() = p.getInt("syncIntervalMin", 15)
+        set(v) = p.edit().putInt("syncIntervalMin", v).apply()
+
     var lastContinuousAt: Long
         get() = p.getLong("lastContinuousAt", 0)
         set(v) = p.edit().putLong("lastContinuousAt", v).apply()

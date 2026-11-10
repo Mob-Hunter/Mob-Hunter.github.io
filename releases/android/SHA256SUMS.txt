@@ -1,2 +1,2 @@
-1c1fe7b0c7de033bdf0939a836e34b096205cb9524a46ea552edba9ab54df212  mob-hunter-agent.apk
-30916c2c867b0b2de8a3be92476794fd6e97dee4fba67b2f6077ae789601bfe5  mob-hunter-console.apk
+5bf95b86128db6e51cfbd6fa69e0f1d496e6bad709c32199636475b2b1e9d606  mob-hunter-agent.apk
+d4e3b282b50ca01c281664e7eced7a4652fa4418525aa6b663b1cdfa2aa09539  mob-hunter-console.apk

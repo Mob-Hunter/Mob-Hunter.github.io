@@ -96,7 +96,7 @@ export interface ConsoleApi {
   exportEmployeeData(id: string, ticket: string): Promise<string>;
   // settings
   getSettings(): Promise<OrgSettings>;
-  updateSettings(patch: Partial<Pick<OrgSettings, 'orgName' | 'dpoContact' | 'siemWebhookUrl'>>): Promise<OrgSettings>;
+  updateSettings(patch: Partial<Pick<OrgSettings, 'orgName' | 'dpoContact' | 'siemWebhookUrl' | 'syncIntervalMin'>>): Promise<OrgSettings>;
   upsertApp(app: AppCatalogEntry): Promise<AppCatalogEntry[]>;
   removeApp(packageName: string): Promise<AppCatalogEntry[]>;
   // public
@@ -278,7 +278,7 @@ export class LocalConsoleApi implements ConsoleApi {
   async getSettings() {
     return this.b.getSettings(this.s);
   }
-  updateSettings(patch: Partial<Pick<OrgSettings, 'orgName' | 'dpoContact' | 'siemWebhookUrl'>>) {
+  updateSettings(patch: Partial<Pick<OrgSettings, 'orgName' | 'dpoContact' | 'siemWebhookUrl' | 'syncIntervalMin'>>) {
     return this.b.updateSettings(this.s, patch);
   }
   upsertApp(app: AppCatalogEntry) {
@@ -482,7 +482,7 @@ export class RemoteConsoleApi implements ConsoleApi {
   getSettings() {
     return this.req<OrgSettings>('GET', '/admin/settings');
   }
-  updateSettings(patch: Partial<Pick<OrgSettings, 'orgName' | 'dpoContact' | 'siemWebhookUrl'>>) {
+  updateSettings(patch: Partial<Pick<OrgSettings, 'orgName' | 'dpoContact' | 'siemWebhookUrl' | 'syncIntervalMin'>>) {
     return this.req<OrgSettings>('PATCH', '/admin/settings', patch);
   }
   upsertApp(app: AppCatalogEntry) {

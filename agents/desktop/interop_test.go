@@ -122,6 +122,22 @@ func TestInteropWithRealServer(t *testing.T) {
 		t.Fatalf("landscape: devices=%v counts=%v", land["devices"], land["counts"])
 	}
 
+	// Check-in frequency set in the console reaches the agent: organisation default, then a per-device override.
+	must("PATCH", "/admin/settings", map[string]any{"syncIntervalMin": 60})
+	if err := a.Checkin(); err != nil || a.Cfg.syncInterval() != 60*time.Minute {
+		t.Fatalf("org interval not applied: %v %s", err, a.Cfg.syncInterval())
+	}
+	must("POST", "/admin/devices/"+id+"/policy", map[string]any{"patch": map[string]any{"syncIntervalMin": 5}, "justification": ""})
+	if err := a.Checkin(); err != nil || a.Cfg.syncInterval() != 5*time.Minute {
+		t.Fatalf("device override not applied: %v %s", err, a.Cfg.syncInterval())
+	}
+	if s, _, _ := admin("PATCH", "/admin/settings", map[string]any{"syncIntervalMin": 7}); s != 422 {
+		t.Fatalf("arbitrary interval accepted: %d", s)
+	}
+	if _, err := a.Poll(); err != nil { // the SYNC_POLICY queued by the policy change
+		t.Fatal(err)
+	}
+
 	// Deleting the computer in the console: signed RELEASE → service and credentials removed → record erased.
 	must("POST", "/admin/devices/"+id+"/delete", map[string]any{"reason": "Laptop returned to IT stock", "confirm": "DELETE"})
 	if _, err := a.Poll(); err != nil {

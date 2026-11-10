@@ -20,7 +20,7 @@ import (
 )
 
 // Version is set at build time (-ldflags "-X main.Version=…").
-var Version = "1.0.0"
+var Version = "1.1.0"
 
 const usage = `Mob Hunter desktop agent %s
 
@@ -102,7 +102,7 @@ func main() {
 			fmt.Println("Not enrolled.")
 			os.Exit(1)
 		}
-		fmt.Printf("Enrolled as %s with %s (policy v%d, notice %s acknowledged: %v, service mode: %v)\n", cfg.DeviceID, cfg.Server, cfg.PolicyVersion, cfg.NoticeVersion, cfg.AcknowledgedAt > 0, cfg.Privileged)
+		fmt.Printf("Enrolled as %s with %s (policy v%d, notice %s acknowledged: %v, service mode: %v, checks in every %s)\n", cfg.DeviceID, cfg.Server, cfg.PolicyVersion, cfg.NoticeVersion, cfg.AcknowledgedAt > 0, cfg.Privileged, cfg.syncInterval())
 	case "sync":
 		mustEnrolled(a, logger)
 		if err := a.Checkin(); err != nil {

@@ -54,6 +54,10 @@ Both modes run the same backend code (`src/core/backend.ts`), so every rule is t
   - A risk can be accepted with a reason for a limited time. Acceptances are audited, and critical threats can never be accepted.
   - Only on/off security settings are read, never content. The employee notice lists them.
 - **Windows, Linux and macOS:** the Go desktop agent (`agents/desktop`) enrols with one command. It uses the same signed protocol and reports security posture. It supports message, lock, reboot, policy sync and self-removal.
+- **Automatic check-in frequency:** set from the console, from 5 minutes to 24 hours (default 15).
+  - Super Admin sets the organisation default in Settings. A device or a selection of devices can override it, and every change is audited.
+  - Agents receive the interval in each check-in response and reschedule themselves. Android uses WorkManager, with a minimum of 15 minutes. The desktop agent uses its service loop, which still polls for commands every minute.
+  - "Online" and "stale" are judged against each device's own interval.
 - **iOS:** needs an Apple MDM push certificate (APNs) and Apple Business Manager, so iOS enrolment is not offered until those exist. The enrolment page and Help explain the requirements.
 - Compliance view: stale check-ins, patch age, Play Integrity, battery, storage, acknowledgement and assignment. Inventory exports to CSV, with spreadsheet formula injection neutralised.
 - Employees: add, import from HR CSV, leaver offboarding, and DSAR export (Security only, ticketed and audited).

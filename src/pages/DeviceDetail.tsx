@@ -9,6 +9,7 @@ import { stateBadge } from './Devices';
 import { RiskMeter, SeverityBadge, ThreatActions } from './Threats';
 import { PLATFORM_ICON, PLATFORM_LABEL, isComputer } from '../ui/platform';
 import type { SecurityPosture } from '../core/types';
+import { SYNC_CHOICES, fmtInterval } from '../ui/sync';
 
 const COMMAND_HELP: Record<CommandType, string> = {
   LOCATE: 'One-off high-accuracy fix. The user always gets a notification.',
@@ -128,7 +129,10 @@ export function DeviceDetailPage() {
               </>
             )}
             <dt>Last check-in</dt>
-            <dd>{fmtAgo(device.lastCheckinAt)}</dd>
+            <dd>
+              {fmtAgo(device.lastCheckinAt)} <Badge tone={device.sync.online ? 'ok' : 'neutral'}>{device.sync.online ? 'online' : 'offline'}</Badge>{' '}
+              <span className="muted small">checks in every {fmtInterval(device.sync.minutes)}</span>
+            </dd>
             <dt>Notice acknowledged</dt>
             <dd>{device.policyAckAt ? `${fmtTime(device.policyAckAt)} (${device.policyAckVersion})` : <Badge tone="warn">Not yet — no location possible</Badge>}</dd>
             <dt>Client certificate</dt>
@@ -205,6 +209,8 @@ export function DeviceDetailPage() {
           <Empty>No threats detected on this device. Checks run at every check-in.</Empty>
         )}
       </Card>
+
+      <SyncCard key={`${device.id}-${device.policy.version}`} device={device} />
 
       {canUpdate && <RenameCard key={device.id} device={device} employees={(employees ?? []).filter((e) => e.status !== 'leaver')} />}
 
@@ -730,5 +736,50 @@ function Posture({ s }: { s: SecurityPosture }) {
       })}
       {typeof s.pendingUpdates === 'number' && <Badge tone={s.pendingUpdates ? 'warn' : 'ok'}>{s.pendingUpdates ? `${s.pendingUpdates} updates pending` : 'Up to date'}</Badge>}
     </>
+  );
+}
+
+/** This device's automatic check-in frequency: the organisation default or its own interval. */
+function SyncCard({ device }: { device: DeviceView }) {
+  const rt = useRuntime();
+  const canEdit = useCan('device.policy');
+  const own = device.policy.syncIntervalMin ?? null;
+  const [v, setV] = useState<string>(own === null ? 'org' : String(own));
+  const { run, busy } = useAction();
+  const next = device.lastCheckinAt ? device.lastCheckinAt + device.sync.minutes * 60_000 : null;
+  const changed = v !== (own === null ? 'org' : String(own));
+  const android = device.platform === 'android';
+  return (
+    <Card title="Automatic check-in">
+      <p className="small">
+        Checks in every <strong>{fmtInterval(device.sync.minutes)}</strong> ({device.sync.source === 'device' ? 'set for this device' : 'organisation default'})
+        {android && device.sync.requested < device.sync.minutes ? ` — ${fmtInterval(device.sync.requested)} requested; Android allows 15 minutes at most often` : ''}.{' '}
+        {next ? <span className="muted">Next expected {next > Date.now() ? `in about ${fmtAgo(next).replace('in ', '')}` : `${fmtAgo(next)} (overdue)`}.</span> : null}
+      </p>
+      {canEdit && (
+        <form
+          className="row-form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void run(() => rt.api.updatePolicy(device.id, { syncIntervalMin: v === 'org' ? null : Number(v) }, ''), 'Check-in frequency saved; the device applies it at its next sync');
+          }}
+        >
+          <Field label="Check in every">
+            <select value={v} onChange={(e) => setV(e.target.value)}>
+              <option value="org">Organisation default</option>
+              {SYNC_CHOICES.map((m) => (
+                <option key={m} value={String(m)}>
+                  {fmtInterval(m)}
+                  {android && m < 15 ? ' (15 min on Android)' : ''}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <button className="btn btn-primary" disabled={busy || !changed}>
+            Save
+          </button>
+        </form>
+      )}
+    </Card>
   );
 }

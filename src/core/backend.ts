@@ -150,6 +150,8 @@ export interface DeviceView extends Omit<Device, 'transparencyKey' | 'cert'> {
   queuedCommands: number;
   /** open lost/stolen incident (no coordinates) */
   activeIncident: Pick<Incident, 'id' | 'kind' | 'ticket' | 'startedAt' | 'trackingUntil' | 'trackingIntervalSec'> | null;
+  /** Automatic check-in interval this device uses, and where it comes from. */
+  sync: { minutes: number; source: 'device' | 'organisation'; requested: number; online: boolean };
   /** Threat posture: open threats (accepted ones listed but not scored) and the resulting risk score. */
   risk: { score: number; band: RiskBand; threats: DeviceThreat[] };
 }
@@ -692,6 +694,7 @@ export class Backend {
       assignedUser: this.state.employees.find((e) => e.id === d.assignedUserId) ?? null,
       queuedCommands: this.state.relayQueues[d.id]?.length ?? 0,
       risk: this.riskOf(d),
+      sync: { ...effectiveSyncMin(d, this.state.settings), online: isOnline(d, this.state.settings, this.clock()) },
       activeIncident: (() => {
         const i = this.state.incidents!.find((x) => x.deviceId === d.id && x.status === 'active');
         return i ? { id: i.id, kind: i.kind, ticket: i.ticket, startedAt: i.startedAt, trackingUntil: i.trackingUntil, trackingIntervalSec: i.trackingIntervalSec } : null;
@@ -773,8 +776,11 @@ export class Backend {
     const { user } = this.requireSession(sessionId);
     this.guard(user, 'device.policy');
     const d = this.findDevice(deviceId);
-    if (!justification || justification.trim().length < 5) throw new ApiError(422, 'justification_required', 'A justification is required for policy changes');
+    // Check-in frequency is operational, not a collection change: it needs no justification on its own.
+    const onlySync = Object.keys(patch).length > 0 && Object.keys(patch).every((k) => k === 'syncIntervalMin');
+    if (!onlySync && (!justification || justification.trim().length < 5)) throw new ApiError(422, 'justification_required', 'A justification is required for policy changes');
     const next: DevicePolicy = { ...d.policy };
+    if (patch.syncIntervalMin !== undefined) next.syncIntervalMin = patch.syncIntervalMin === null ? null : checkSyncInterval(patch.syncIntervalMin);
     if (patch.continuousLocation !== undefined) next.continuousLocation = !!patch.continuousLocation;
     if (patch.continuousIntervalMin !== undefined) {
       if (patch.continuousIntervalMin < 15) throw new ApiError(422, 'interval_too_short', 'Continuous location interval must be at least 15 minutes');
@@ -793,7 +799,7 @@ export class Backend {
     next.networkLogging = false;
     next.version = d.policy.version + 1;
     d.policy = next;
-    await this.audit.append({ at: this.clock(), actor: user.id, actorRole: user.role, action: 'device.policy_changed', target: d.id, detail: { patch, justification: justification.trim(), version: next.version } });
+    await this.audit.append({ at: this.clock(), actor: user.id, actorRole: user.role, action: 'device.policy_changed', target: d.id, detail: { patch, justification: (justification ?? '').trim(), version: next.version } });
     this.persist();
     // Tell the device to pull the new policy.
     await this.enqueueSystemCommand(d, 'SYNC_POLICY', user);
@@ -1003,10 +1009,10 @@ export class Backend {
   }
 
   /** GET /v1/policy */
-  async devicePolicy(auth: DeviceAuth): Promise<{ policy: DevicePolicy; lostMode: boolean; transparencyUrl: string }> {
+  async devicePolicy(auth: DeviceAuth): Promise<{ policy: DevicePolicy; lostMode: boolean; transparencyUrl: string; syncIntervalMin: number }> {
     const d = await this.authenticateDevice('GET', '/v1/policy', null, auth);
     this.persist();
-    return { policy: structuredClone(d.policy), lostMode: d.lostMode, transparencyUrl: this.transparencyPath(d) };
+    return { policy: structuredClone(d.policy), lostMode: d.lostMode, transparencyUrl: this.transparencyPath(d), syncIntervalMin: effectiveSyncMin(d, this.state.settings).minutes };
   }
 
   transparencyPath(d: Pick<Device, 'id' | 'transparencyKey'>): string {
@@ -1014,7 +1020,7 @@ export class Backend {
   }
 
   /** POST /v1/checkin */
-  async checkin(auth: DeviceAuth, body: { telemetry: Telemetry; serial: string; model: string; os: string; policyAck?: { version: string; at: number }; capabilities?: DeviceCapabilities }): Promise<{ ok: true; state: Device['state']; policyVersion: number; pendingCommands: number; transparencyUrl: string }> {
+  async checkin(auth: DeviceAuth, body: { telemetry: Telemetry; serial: string; model: string; os: string; policyAck?: { version: string; at: number }; capabilities?: DeviceCapabilities }): Promise<{ ok: true; state: Device['state']; policyVersion: number; pendingCommands: number; transparencyUrl: string; syncIntervalMin: number }> {
     const d = await this.authenticateDevice('POST', '/v1/checkin', body, auth);
     const now = this.clock();
     d.lastCheckinAt = now;
@@ -1032,7 +1038,7 @@ export class Backend {
       await this.audit.append({ at: now, actor: d.id, actorRole: 'DEVICE', action: 'device.notice_acknowledged', target: d.id, detail: { version: body.policyAck.version } });
     }
     this.persist();
-    return { ok: true, state: d.state, policyVersion: d.policy.version, pendingCommands: this.state.relayQueues[d.id]?.length ?? 0, transparencyUrl: this.transparencyPath(d) };
+    return { ok: true, state: d.state, policyVersion: d.policy.version, pendingCommands: this.state.relayQueues[d.id]?.length ?? 0, transparencyUrl: this.transparencyPath(d), syncIntervalMin: effectiveSyncMin(d, this.state.settings).minutes };
   }
 
   /** GET /v1/commands/pending — the device pulls through its relay. */
@@ -2024,7 +2030,7 @@ export class Backend {
     const now = this.clock();
     return this.state.devices
       .filter((d) => d.state !== 'retired' && d.state !== 'wiped')
-      .map((d) => ({ deviceId: d.id, deviceName: displayName(d), issues: complianceIssues(d, now) }))
+      .map((d) => ({ deviceId: d.id, deviceName: displayName(d), issues: complianceIssues(d, now, this.state.settings) }))
       .sort((a, b) => b.issues.length - a.issues.length);
   }
 
@@ -2035,7 +2041,7 @@ export class Backend {
     return structuredClone(this.state.settings!);
   }
 
-  async updateSettings(sessionId: string, patch: Partial<Pick<OrgSettings, 'orgName' | 'dpoContact' | 'siemWebhookUrl'>>): Promise<OrgSettings> {
+  async updateSettings(sessionId: string, patch: Partial<Pick<OrgSettings, 'orgName' | 'dpoContact' | 'siemWebhookUrl' | 'syncIntervalMin'>>): Promise<OrgSettings> {
     const { user } = this.requireSession(sessionId);
     this.guard(user, 'settings.manage');
     const st = this.state.settings!;
@@ -2054,6 +2060,8 @@ export class Backend {
       if (v && !/^https:\/\/[^\s]+$/.test(v)) throw new ApiError(422, 'invalid_url', 'Webhook must be an https:// URL');
       st.siemWebhookUrl = v || undefined;
     }
+    // Agents pick the new default up in the response to their next check-in.
+    if (patch.syncIntervalMin !== undefined) st.syncIntervalMin = checkSyncInterval(patch.syncIntervalMin);
     this.audit.append({ at: this.clock(), actor: user.id, actorRole: user.role, action: 'settings.updated', detail: { fields: Object.keys(patch) } });
     this.persist();
     return structuredClone(st);
@@ -2146,7 +2154,7 @@ export class Backend {
     return {
       total: ds.length,
       unnamed: ds.filter((d) => !d.label).length,
-      online: ds.filter((d) => d.lastCheckinAt && now - d.lastCheckinAt < 15 * 60_000).length,
+      online: ds.filter((d) => isOnline(d, this.state.settings, now)).length,
       lost: ds.filter((d) => d.lostMode).length,
       awaitingAck: ds.filter((d) => !d.policyAckAt && d.state === 'enrolled').length,
       pendingApprovals: this.state.commands.filter((c) => c.status === 'pending_approval').length,
@@ -2262,6 +2270,31 @@ export type Notice = Omit<typeof COLLECTION_NOTICE, 'title' | 'rights' | 'collec
   notCollected: string[];
 };
 
+/** Check-in intervals an administrator can choose, in minutes. */
+export const SYNC_INTERVALS = [5, 15, 30, 60, 120, 240, 480, 720, 1440] as const;
+export const DEFAULT_SYNC_MIN = 15;
+/** Android runs background work at most every 15 minutes (WorkManager); phones round shorter intervals up. */
+export const ANDROID_MIN_SYNC = 15;
+
+/** The interval a device actually uses: its own override, else the organisation default, within the platform's limits. */
+export function effectiveSyncMin(d: Pick<Device, 'platform' | 'policy'>, settings: Pick<OrgSettings, 'syncIntervalMin'> | undefined): { minutes: number; source: 'device' | 'organisation'; requested: number } {
+  const own = d.policy?.syncIntervalMin;
+  const requested = own ?? settings?.syncIntervalMin ?? DEFAULT_SYNC_MIN;
+  const minutes = (d.platform ?? 'android') === 'android' ? Math.max(ANDROID_MIN_SYNC, requested) : requested;
+  return { minutes, source: own != null ? 'device' : 'organisation', requested };
+}
+
+function checkSyncInterval(v: unknown): number {
+  const n = Number(v);
+  if (!(SYNC_INTERVALS as readonly number[]).includes(n)) throw new ApiError(422, 'invalid_interval', `Check-in interval must be one of ${SYNC_INTERVALS.join(', ')} minutes`);
+  return n;
+}
+
+/** "Online" means checked in within the device's own interval plus 5 minutes' grace. */
+export function isOnline(d: Pick<Device, 'lastCheckinAt' | 'platform' | 'policy'>, settings: OrgSettings | undefined, now: number): boolean {
+  return !!d.lastCheckinAt && now - d.lastCheckinAt < (effectiveSyncMin(d, settings).minutes + 5) * 60_000;
+}
+
 export function defaultSettings(): OrgSettings {
   return { orgName: 'Mob Hunter', dpoContact: '', apps: [] };
 }
@@ -2280,12 +2313,14 @@ export type ComplianceIssue =
   | { code: 'firewall_off'; severity: 'warn'; text: string };
 
 /** Pure compliance rules (unit-tested). */
-export function complianceIssues(d: Device, now: number): ComplianceIssue[] {
+export function complianceIssues(d: Device, now: number, settings?: OrgSettings): ComplianceIssue[] {
+  // A device that checks in once a day is not stale after one day: allow three of its own intervals.
+  const staleAfter = Math.max(STALE_CHECKIN_MS, 3 * effectiveSyncMin(d, settings).minutes * 60_000);
   const out: ComplianceIssue[] = [];
   if (d.lostMode) out.push({ code: 'lost', severity: 'bad', text: 'Device is in Lost Mode' });
   if (!d.policyAckAt) out.push({ code: 'not_acknowledged', severity: 'warn', text: 'Employee has not acknowledged the notice' });
   if (!d.lastCheckinAt) out.push({ code: 'never_checked_in', severity: 'bad', text: 'Never checked in' });
-  else if (now - d.lastCheckinAt > STALE_CHECKIN_MS) out.push({ code: 'stale_checkin', severity: 'bad', text: `No check-in for ${Math.floor((now - d.lastCheckinAt) / 86_400_000)} day(s)` });
+  else if (now - d.lastCheckinAt > staleAfter) out.push({ code: 'stale_checkin', severity: 'bad', text: `No check-in for ${Math.floor((now - d.lastCheckinAt) / 86_400_000)} day(s)` });
   if (!d.label || !d.assignedUserId) out.push({ code: 'unassigned', severity: 'warn', text: 'Not named or not assigned to an employee' });
   const t = d.telemetry;
   if (t) {
@@ -2344,7 +2379,7 @@ function sanitiseCapabilities(c: Partial<DeviceCapabilities>): DeviceCapabilitie
 export const RESTRICTION_KEYS = ['cameraDisabled', 'screenCaptureDisabled', 'bluetoothDisabled', 'disallowAddUser', 'disallowConfigWifi'] as const;
 
 export type PolicyPatch = Partial<
-  Pick<DevicePolicy, 'continuousLocation' | 'continuousIntervalMin' | 'workingHours' | 'passwordMinLength' | 'maxTimeToLockSec' | (typeof RESTRICTION_KEYS)[number]>
+  Pick<DevicePolicy, 'continuousLocation' | 'continuousIntervalMin' | 'workingHours' | 'passwordMinLength' | 'maxTimeToLockSec' | 'syncIntervalMin' | (typeof RESTRICTION_KEYS)[number]>
 >;
 
 /** Commands that may be sent to many phones at once. Ticketed / destructive ones stay one-by-one. */

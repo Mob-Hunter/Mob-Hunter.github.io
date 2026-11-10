@@ -262,10 +262,24 @@ try {
   await go(/Settings/);
   await page.getByRole('heading', { name: 'Settings', exact: true }).waitFor();
   await page.getByLabel('Data Protection Officer contact').fill('privacy@example.com');
-  await page.getByRole('button', { name: 'Save' }).click();
+  await page.locator('form', { has: page.getByLabel('Data Protection Officer contact') }).getByRole('button', { name: 'Save' }).click();
   await page.locator('.toast-ok', { hasText: 'Settings saved' }).waitFor();
   await page.getByText('Timesheets', { exact: true }).waitFor();
   ok('organisation settings saved; app catalogue shown');
+
+  // Automatic check-in frequency: organisation default in Settings, override on a device.
+  await page.getByLabel('Check in every').selectOption('60');
+  await page.locator('form', { has: page.getByLabel('Check in every') }).getByRole('button', { name: 'Save' }).click();
+  await page.locator('.toast-ok', { hasText: 'Agents will check in every 1 hour' }).waitFor();
+  await go('Devices');
+  await page.getByRole('link', { name: "Nimal's field phone" }).click();
+  await page.getByText(/Checks in every\s*1 hour\s*\(organisation default\)/).waitFor();
+  const syncForm = page.locator('form', { has: page.getByLabel('Check in every') });
+  await syncForm.getByLabel('Check in every').selectOption('240');
+  await syncForm.getByRole('button', { name: 'Save' }).click();
+  await page.locator('.toast-ok', { hasText: 'Check-in frequency saved' }).waitFor();
+  await page.getByText(/Checks in every\s*4 hours\s*\(set for this device\)/).waitFor();
+  ok('check-in frequency: organisation default set in Settings, per-device override on the device page');
 
   // MDM parity: groups + asset tag on a device, restrictions, then a bulk message to a group.
   await go('Devices');
@@ -274,7 +288,7 @@ try {
   await page.getByRole('heading', { name: 'Kavya sales phone' }).waitFor();
   await page.getByLabel('Groups').fill('Sales, Colombo');
   await page.getByLabel('Asset tag').fill('MH-000777');
-  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await page.locator('form', { has: page.getByLabel('Asset tag') }).getByRole('button', { name: 'Save', exact: true }).click();
   await page.locator('.toast-ok', { hasText: 'recorded in the audit log' }).first().waitFor();
   await page.getByRole('switch', { name: /Disable camera/ }).check();
   await page.getByRole('switch', { name: /Block screenshots/ }).check();

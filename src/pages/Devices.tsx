@@ -6,6 +6,7 @@ import type { CommandType } from '../core/rbac';
 import type { Platform } from '../core/types';
 import { PLATFORM_ICON, PLATFORM_LABEL } from '../ui/platform';
 import { RiskMeter } from './Threats';
+import { SYNC_CHOICES, fmtInterval } from '../ui/sync';
 
 export function stateBadge(d: Pick<DeviceView, 'state' | 'lostMode' | 'policyAckAt'> & { pendingRemoval?: DeviceView['pendingRemoval'] }) {
   if (d.lostMode) return <Badge tone="bad">Lost Mode</Badge>;
@@ -187,8 +188,10 @@ function BulkBar({ devices, onDone }: { devices: DeviceView[]; onDone: () => voi
   const canMessage = useCan('command.MESSAGE');
   const canRing = useCan('command.RING');
   const canInstall = useCan('command.INSTALL_APP');
+  const canPolicy = useCan('device.policy');
+  const [syncV, setSyncV] = useState('org');
   const [settings] = useQuery((api) => api.getSettings(), [], { live: false });
-  const [mode, setMode] = useState<null | 'retire' | 'delete' | 'message' | 'install' | 'uninstall'>(null);
+  const [mode, setMode] = useState<null | 'retire' | 'delete' | 'message' | 'install' | 'uninstall' | 'sync'>(null);
   const [msgText, setMsgText] = useState('');
   const [pkg, setPkg] = useState('');
   const [reason, setReason] = useState('');
@@ -274,6 +277,11 @@ function BulkBar({ devices, onDone }: { devices: DeviceView[]; onDone: () => voi
               </button>
             </>
           )}
+          {canPolicy && live.length > 0 && (
+            <button className="btn btn-sm" disabled={busy} onClick={() => setMode('sync')}>
+              Check-in frequency…
+            </button>
+          )}
           {canRetire && live.length > 0 && (
             <button className="btn btn-sm" disabled={busy} onClick={() => setMode('retire')}>
               Retire…
@@ -289,6 +297,29 @@ function BulkBar({ devices, onDone }: { devices: DeviceView[]; onDone: () => voi
           </button>
         </div>
       </div>
+      {mode === 'sync' && (
+        <form
+          className="row-form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void each('Check-in frequency', live, (d) => rt.api.updatePolicy(d.id, { syncIntervalMin: syncV === 'org' ? null : Number(syncV) }, ''));
+          }}
+        >
+          <Field label={`Check-in frequency for ${live.length} device(s)`} hint="Android phones check in every 15 minutes at the most often.">
+            <select value={syncV} onChange={(e) => setSyncV(e.target.value)} autoFocus>
+              <option value="org">Organisation default</option>
+              {SYNC_CHOICES.map((m) => (
+                <option key={m} value={String(m)}>
+                  {fmtInterval(m)}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <button className="btn btn-primary" disabled={busy}>
+            Apply
+          </button>
+        </form>
+      )}
       {mode === 'message' && (
         <form
           className="row-form"
