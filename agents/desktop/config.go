@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 // Config is everything the agent keeps on disk. The private key never leaves this file,
@@ -23,6 +24,7 @@ type Config struct {
 	PolicyVersion   int      `json:"policyVersion"`
 	Seen            []string `json:"seen"`
 	Privileged      bool     `json:"privileged"`
+	SyncIntervalMin int      `json:"syncIntervalMin"` // set in the console; 0 = default (15)
 	Notice          Notice   `json:"notice"`
 }
 
@@ -63,6 +65,18 @@ func saveConfig(dir string, c *Config) error {
 		return err
 	}
 	return os.Rename(tmp, configPath(dir))
+}
+
+// syncInterval is the automatic check-in interval (console setting, 1 minute to 24 hours; default 15 minutes).
+func (c *Config) syncInterval() time.Duration {
+	m := c.SyncIntervalMin
+	if m <= 0 {
+		m = 15
+	}
+	if m > 1440 {
+		m = 1440
+	}
+	return time.Duration(m) * time.Minute
 }
 
 // remember records a command id / nonce so a replay is never executed twice (bounded list).

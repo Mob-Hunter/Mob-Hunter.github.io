@@ -143,7 +143,7 @@ const GUIDES: Guide[] = [
           </li>
         </ol>
         <p className="small muted">
-          Without push messaging the phone checks in every 15 minutes, so a request can take that long. Opening the Mob Hunter app on the phone and tapping{' '}
+          Without push messaging the phone collects it at its next automatic check-in (every 15 minutes by default — see <Link to="/settings">Settings</Link>). Opening the Mob Hunter app on the phone and tapping{' '}
           <em>Sync now</em> delivers it at once.
         </p>
       </>
@@ -228,6 +228,30 @@ const GUIDES: Guide[] = [
     ),
   },
   {
+    id: 'sync',
+    title: 'How often devices check in',
+    icon: '⟳',
+    summary: 'Set the automatic check-in interval for everyone, a group or one device.',
+    keywords: 'sync frequency interval check in checkin minutes hours schedule refresh poll battery',
+    body: (
+      <>
+        <ul>
+          <li>
+            Organisation default: <Link to="/settings">Settings</Link> → <em>Agent check-in frequency</em> (Super Admin), from 5 minutes to 24 hours. 15 minutes is the default.
+          </li>
+          <li>
+            One device: its page → <em>Automatic check-in</em>. Several: <Link to="/devices">Devices</Link> → select (or filter a group and Select all) → <em>Check-in frequency…</em>.
+          </li>
+          <li>Each device picks the new interval up at its next check-in. The device page shows the interval, where it comes from and when the next check-in is expected.</li>
+        </ul>
+        <p className="small muted">
+          Android phones check in every 15 minutes at the most often (an Android limit). Commands never wait for a check-in: phones are woken by push, computers look for commands every
+          minute. A device counts as online when it has checked in within its own interval, and as stale after three missed intervals (at least a day).
+        </p>
+      </>
+    ),
+  },
+  {
     id: 'remove',
     title: 'Remove a device',
     icon: '↺',
@@ -306,7 +330,7 @@ const FAQ: { q: string; a: ReactNode; keywords: string }[] = [
   {
     q: 'A location request is still pending',
     keywords: 'locate pending slow delay',
-    a: <>The phone collects it at its next check-in (at most 15 minutes), or straight away when someone taps Sync now in the app. It also needs location permission — the device page shows what the user allowed.</>,
+    a: <>The phone collects it at its next automatic check-in (the interval is on the device page and in Settings), or straight away when someone taps Sync now in the app. It also needs location permission — the device page shows what the user allowed.</>,
   },
   {
     q: 'I cannot see a page or button',

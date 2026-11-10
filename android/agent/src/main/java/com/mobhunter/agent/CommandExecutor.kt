@@ -84,6 +84,7 @@ class CommandExecutor(private val ctx: Context, private val config: Config, priv
                     val res = api.getJson("/v1/policy")
                     config.policyJson = res.getJSONObject("policy").toString()
                     config.transparencyPath = res.optStr("transparencyUrl") ?: config.transparencyPath
+                    Sync.applyInterval(ctx, res.optInt("syncIntervalMin", 0))
                     val problems = PolicyEnforcer.apply(ctx, config.policy!!)
                     AgentService.reconcile(ctx)
                     result(id, "succeeded", if (problems.isEmpty()) "Policy v${config.policy!!.optInt("version")} applied" else "Applied with issues: ${problems.joinToString("; ")}")

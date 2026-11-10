@@ -132,7 +132,7 @@ try {
   await page.getByRole('link', { name: 'Unnamed device' }).click();
   await page.getByRole('heading', { name: 'Unnamed device' }).waitFor(); // detail page, not the list's inline rename
   await page.getByLabel('Device name', { exact: true }).fill('Pilot phone 1');
-  await page.getByRole('button', { name: 'Save' }).click();
+  await page.locator('form', { has: page.getByLabel('Device name', { exact: true }) }).getByRole('button', { name: 'Save' }).click();
   await page.getByRole('heading', { name: 'Pilot phone 1' }).waitFor();
   ok('test device enrolled over the HTTP device API, acknowledged and renamed');
   await page.getByRole('button', { name: 'Sign out' }).click();

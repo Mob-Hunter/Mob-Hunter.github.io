@@ -61,10 +61,14 @@ export interface OrgSettings {
   apps: AppCatalogEntry[];
   /** optional HTTPS endpoint that receives every audit row (HMAC-signed) */
   siemWebhookUrl?: string;
+  /** how often agents check in automatically, in minutes (organisation default; 15 if unset) */
+  syncIntervalMin?: number;
 }
 
 export interface DevicePolicy {
   version: number;
+  /** per-device check-in interval in minutes; null/absent = use the organisation default */
+  syncIntervalMin?: number | null;
   passwordMinLength: number;
   maxTimeToLockSec: number;
   updateWindow: { startMinute: number; endMinute: number };

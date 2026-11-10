@@ -4,6 +4,7 @@ import { Card, Empty, ErrorBox, Field, useAction, useCan, useQuery, useRuntime }
 import { ApkDownloads, downloadsBase } from './Download';
 import { DOWNLOADS_URL } from '../config';
 import type { AppCatalogEntry } from '../core/types';
+import { SYNC_CHOICES, fmtInterval } from '../ui/sync';
 
 export function SettingsPage() {
   const rt = useRuntime();
@@ -27,6 +28,7 @@ export function SettingsPage() {
         </dl>
       </Card>
       {settings && <OrgCard key={settings.orgName + settings.dpoContact} orgName={settings.orgName} dpoContact={settings.dpoContact} siem={settings.siemWebhookUrl ?? ''} editable={canSettings} />}
+      {settings && <SyncCard key={settings.syncIntervalMin ?? 15} current={settings.syncIntervalMin ?? 15} editable={canSettings} />}
       {settings && <AppsCard apps={settings.apps} editable={canApps} />}
       <MobileAppsCard />
       <PasswordCard />
@@ -65,6 +67,49 @@ function OrgCard({ orgName, dpoContact, siem, editable }: { orgName: string; dpo
           </div>
         )}
       </form>
+    </Card>
+  );
+}
+
+/** Organisation-wide automatic check-in frequency for every agent (devices can override it). */
+function SyncCard({ current, editable }: { current: number; editable: boolean }) {
+  const rt = useRuntime();
+  const [v, setV] = useState(current);
+  const { run, busy } = useAction();
+  return (
+    <Card title="Agent check-in frequency">
+      <p className="small muted">
+        How often every phone and computer checks in by itself: it reports health and security posture, picks up policy and runs queued commands. Devices can override it on their own page
+        or from <Link to="/devices">Devices</Link> → select → Check-in frequency.
+      </p>
+      <form
+        className="row-form"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void run(() => rt.api.updateSettings({ syncIntervalMin: v }), `Agents will check in every ${fmtInterval(v)}`);
+        }}
+      >
+        <Field label="Check in every" hint="Applies to each device from its next check-in.">
+          <select value={v} onChange={(e) => setV(Number(e.target.value))} disabled={!editable}>
+            {SYNC_CHOICES.map((m) => (
+              <option key={m} value={m}>
+                {fmtInterval(m)}
+                {m === 15 ? ' (default)' : ''}
+              </option>
+            ))}
+          </select>
+        </Field>
+        {editable && (
+          <button className="btn btn-primary" disabled={busy || v === current}>
+            Save
+          </button>
+        )}
+      </form>
+      <ul className="small muted">
+        <li>Android phones check in every 15 minutes at the most often (an Android limit); shorter settings apply to computers.</li>
+        <li>Commands do not wait for the next check-in: phones with push are woken at once, computers look for commands every minute, and Sync now in the app forces a check-in.</li>
+        <li>Shorter intervals give fresher health and threat data but use a little more battery and data.</li>
+      </ul>
     </Card>
   );
 }

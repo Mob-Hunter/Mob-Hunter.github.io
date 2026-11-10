@@ -175,8 +175,9 @@ func (a *Agent) Checkin() error {
 		body["policyAck"] = map[string]any{"version": a.Cfg.NoticeVersion, "at": a.Cfg.AcknowledgedAt}
 	}
 	var res struct {
-		State         string `json:"state"`
-		PolicyVersion int    `json:"policyVersion"`
+		State           string `json:"state"`
+		PolicyVersion   int    `json:"policyVersion"`
+		SyncIntervalMin int    `json:"syncIntervalMin"`
 	}
 	if err := a.API.call("POST", "/v1/checkin", body, &res); err != nil {
 		return err
@@ -185,7 +186,11 @@ func (a *Agent) Checkin() error {
 		a.Cfg.AckSent = true
 	}
 	a.Cfg.PolicyVersion = res.PolicyVersion
-	a.logf("checked in: state %s, policy v%d", res.State, res.PolicyVersion)
+	if res.SyncIntervalMin > 0 && res.SyncIntervalMin != a.Cfg.SyncIntervalMin {
+		a.logf("check-in interval set to %d minutes by the console", res.SyncIntervalMin)
+		a.Cfg.SyncIntervalMin = res.SyncIntervalMin
+	}
+	a.logf("checked in: state %s, policy v%d, next in %s", res.State, res.PolicyVersion, a.Cfg.syncInterval())
 	return saveConfig(a.Dir, a.Cfg)
 }
 
@@ -257,11 +262,15 @@ func (a *Agent) execute(c *Command) string {
 			Policy struct {
 				Version int `json:"version"`
 			} `json:"policy"`
+			SyncIntervalMin int `json:"syncIntervalMin"`
 		}
 		if err := a.API.call("GET", "/v1/policy", nil, &p); err != nil {
 			return report(err, "")
 		}
 		a.Cfg.PolicyVersion = p.Policy.Version
+		if p.SyncIntervalMin > 0 {
+			a.Cfg.SyncIntervalMin = p.SyncIntervalMin
+		}
 		_ = saveConfig(a.Dir, a.Cfg)
 		return report(nil, fmt.Sprintf("Policy v%d received; phone restrictions do not apply to computers", p.Policy.Version))
 	case "REBOOT":
@@ -301,14 +310,15 @@ func (a *Agent) Release() {
 	}
 }
 
-// Run is the service loop: check in every 15 minutes, pull commands every minute.
+// Run is the service loop: check in at the interval set in the console (15 minutes by default),
+// and pull commands every minute so they never wait for the next check-in.
 func (a *Agent) Run(stop <-chan struct{}) {
 	lastCheckin := time.Time{}
 	for {
 		if a.Cfg == nil {
 			return
 		}
-		if time.Since(lastCheckin) >= 15*time.Minute {
+		if time.Since(lastCheckin) >= a.Cfg.syncInterval() {
 			if err := a.Checkin(); err != nil {
 				a.logf("check-in failed: %v", err)
 				var ae *APIError

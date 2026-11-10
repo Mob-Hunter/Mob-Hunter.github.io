@@ -23,16 +23,29 @@ class AgentApp : Application() {
     }
 }
 
-/** Background sync via WorkManager: every 15 min, plus immediately on push wake / boot / enrolment. */
+/**
+ * Background sync via WorkManager at the interval set in the console (15 min by default; Android's
+ * minimum for periodic work is 15 min), plus immediately on push wake / boot / enrolment.
+ */
 object Sync {
     private val net = Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
 
-    fun schedulePeriodic(ctx: Context) {
+    fun schedulePeriodic(ctx: Context, replace: Boolean = false) {
+        val minutes = Config(ctx).syncIntervalMin.coerceIn(15, 1440).toLong()
         WorkManager.getInstance(ctx).enqueueUniquePeriodicWork(
             "mob-hunter-sync",
-            ExistingPeriodicWorkPolicy.KEEP,
-            PeriodicWorkRequestBuilder<SyncWorker>(15, TimeUnit.MINUTES).setConstraints(net).build(),
+            if (replace) ExistingPeriodicWorkPolicy.UPDATE else ExistingPeriodicWorkPolicy.KEEP,
+            PeriodicWorkRequestBuilder<SyncWorker>(minutes, TimeUnit.MINUTES).setConstraints(net).build(),
         )
+    }
+
+    /** Applies a new interval from the server; reschedules only when it changed. */
+    fun applyInterval(ctx: Context, minutes: Int) {
+        if (minutes <= 0) return
+        val c = Config(ctx)
+        if (c.syncIntervalMin == minutes) return
+        c.syncIntervalMin = minutes
+        schedulePeriodic(ctx, replace = true)
     }
 
     fun now(ctx: Context) {

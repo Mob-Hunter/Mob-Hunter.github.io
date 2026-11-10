@@ -18,6 +18,8 @@ A single static Go binary that manages a computer with the same signed protocol 
 | SYNC_POLICY, RELEASE | yes | yes | yes |
 | Background service | scheduled task at boot as SYSTEM | systemd unit | launch daemon |
 
+The agent checks in at the interval set in the console (Settings → Agent check-in frequency, or per device; 15 minutes by default) and looks for commands every minute.
+
 The command set is closed. There is no shell, no file access, no screen capture, and no app or browsing inventory. Run `mob-hunter-agent posture` to print exactly what the computer reports.
 
 LOCATE, Lost Mode, RING, app installs and WIPE are phone-only. The server refuses them for computers before signing.

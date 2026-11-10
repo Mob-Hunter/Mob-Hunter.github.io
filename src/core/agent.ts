@@ -57,6 +57,8 @@ export interface AgentState {
   autoPull?: boolean;
   /** management released and the agent uninstalled (RELEASE) */
   released?: boolean;
+  /** automatic check-in interval reported by the server (minutes) */
+  syncIntervalMin?: number;
   /** simulated platform (default android) and security posture reported in telemetry */
   platform?: 'android' | 'windows' | 'linux' | 'macos';
   posture?: { integrity?: Telemetry['integrity']; patchLevel?: string; noBattery?: boolean; security?: SecurityPosture };
@@ -195,7 +197,8 @@ export class SimulatedAgent {
       ...this.state.hardware,
       ...(this.state.acknowledgedAt && !this.state.ackSent ? { policyAck: { version: COLLECTION_NOTICE.version, at: this.state.acknowledgedAt } } : {}),
     };
-    const res = await this.call<{ state: string; pendingCommands: number; transparencyUrl: string }>('POST', '/v1/checkin', body);
+    const res = await this.call<{ state: string; pendingCommands: number; transparencyUrl: string; syncIntervalMin?: number }>('POST', '/v1/checkin', body);
+    if (res.syncIntervalMin) this.state.syncIntervalMin = res.syncIntervalMin;
     if ('policyAck' in body) this.state.ackSent = true;
     this.state.transparencyUrl = res.transparencyUrl;
     this.log(`Checked in (state ${res.state}, ${res.pendingCommands} pending)`);

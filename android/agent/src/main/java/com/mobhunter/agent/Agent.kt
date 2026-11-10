@@ -94,6 +94,7 @@ class Agent(private val ctx: Context) {
         val res = api.post("/v1/checkin", body)
         if (body.has("policyAck")) config.ackSent = true
         config.transparencyPath = res.optStr("transparencyUrl") ?: config.transparencyPath
+        Sync.applyInterval(ctx, res.optInt("syncIntervalMin", 0))
     }
 
     private fun pullAndExecute() {
